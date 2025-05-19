@@ -33,7 +33,6 @@ def test_duckdb_loader(tmp_path, pipeline, data, expected):
     data_path.mkdir(parents=True, exist_ok=True)
 
     conn = duckdb.connect(meta_file)
-    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {pipeline.schema_}")
 
     # Create a DuckDBLoader instance
     loader = DuckDBLoader(db_path=meta_file, base_path=data_path)

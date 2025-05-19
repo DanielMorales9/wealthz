@@ -24,6 +24,7 @@ class DuckDBLoader(Loader):
 
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
         # Register the in-memory DataFrame as a DuckDB relation
+        self._conn.execute(f"CREATE SCHEMA IF NOT EXISTS {pipeline.schema_}")
         self._conn.register("df", df.to_arrow())
 
         # Write to Parquet
@@ -32,7 +33,6 @@ class DuckDBLoader(Loader):
 
         copy_template = Template("COPY df TO '$path' (FORMAT PARQUET);")
         copy_stmt = copy_template.substitute(path=str(table_path))
-        print(copy_stmt)
         self._conn.execute(copy_stmt)
 
         # Create external table
