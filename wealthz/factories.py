@@ -34,12 +34,10 @@ class GoogleCredentialsFactory(Factory[Credentials]):
 
 
 class GoogleSheetFetcherFactory(Factory[GoogleSheetFetcher]):
-    def __init__(self, sheet_id: str, sheet_range: str) -> None:
-        self._sheet_id = sheet_id
-        self._sheet_range = sheet_range
+    def __init__(self) -> None:
         self._credentials_path = SECRETS_PATH / GOOGLE_CREDENTIALS_FILENAME
 
     def create(self) -> GoogleSheetFetcher:
         creds_manager = GoogleCredentialsFactory(self._credentials_path, scope=GoogleCredentialsScope.SPREADSHEETS)
         credentials = creds_manager.create()
-        return GoogleSheetFetcher(self._sheet_id, self._sheet_range, credentials)
+        return GoogleSheetFetcher(credentials)

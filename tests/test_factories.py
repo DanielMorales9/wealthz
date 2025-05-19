@@ -12,7 +12,7 @@ from wealthz.fetchers import GoogleSheetFetcher
 
 @patch("wealthz.factories.Credentials.from_service_account_file")
 def test_gsheet_fetcher_factory(_):
-    factory = GoogleSheetFetcherFactory("fake_sheet_id", "fake_range")
+    factory = GoogleSheetFetcherFactory()
     assert isinstance(factory.create(), GoogleSheetFetcher)
 
 

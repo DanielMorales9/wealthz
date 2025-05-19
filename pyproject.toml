@@ -47,7 +47,7 @@ show_error_codes = "True"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=50 --tb=short"
+addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=70 --tb=short"
 testpaths = ["tests"]
 
 [tool.ruff]
