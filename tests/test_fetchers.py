@@ -2,11 +2,11 @@ from unittest.mock import MagicMock, patch
 
 import polars
 import pytest
+from conftest import GSHEET_ETL_PIPELINE
 from google.auth.credentials import Credentials
 from polars import DataFrame
 
 from wealthz.fetchers import GoogleSheetFetcher
-from wealthz.model import ETLPipeline
 
 
 @pytest.fixture()
@@ -21,21 +21,7 @@ def mock_gsheet():
     "pipeline, data, expected",
     [
         (
-            ETLPipeline(
-                engine={"type": "duckdb", "storage": "local"},
-                schema="test_schema",
-                name="test_name",
-                columns=[
-                    {"name": "column1", "type": "string"},
-                    {"name": "column2", "type": "integer"},
-                ],
-                datasource={
-                    "type": "gsheet",
-                    "sheet_id": "test-id",
-                    "sheet_range": "test-sheet-range",
-                    "credentials_file": "mock-creds.json",
-                },
-            ),
+            GSHEET_ETL_PIPELINE,
             {
                 "values": [["column1", "column2"], ["value1", 123], ["value2", 456]],
             },
@@ -55,7 +41,7 @@ def mock_gsheet():
 def test_google_sheet_fetcher(pipeline, data, expected, mock_gsheet):
     mock_gsheet.values.return_value.get.return_value.execute.return_value = data
     mock_credentials = MagicMock(spec=Credentials)
-    fetcher = GoogleSheetFetcher(mock_credentials)
-    actual = fetcher.fetch(pipeline)
+    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
+    actual = fetcher.fetch()
     assert not actual.is_empty()
     assert actual.equals(expected)

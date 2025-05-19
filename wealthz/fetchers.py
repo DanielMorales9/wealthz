@@ -11,7 +11,7 @@ from wealthz.model import ColumnType, ETLPipeline
 
 class Fetcher(ABC):
     @abc.abstractmethod
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame: ...
+    def fetch(self) -> DataFrame: ...
 
 
 POLARS_SCHEMA_OVERRIDE = {
@@ -25,14 +25,14 @@ POLARS_SCHEMA_OVERRIDE = {
 
 
 class GoogleSheetFetcher(Fetcher):
-    def __init__(self, credentials: Credentials) -> None:
-        # Build Sheets API client
+    def __init__(self, pipeline: ETLPipeline, credentials: Credentials) -> None:
+        self._pipeline = pipeline
         service = build("sheets", "v4", credentials=credentials)
         self._sheet_client = service.spreadsheets()
 
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame:
+    def fetch(self) -> DataFrame:
         # Fetch the sheet data
-        datasource = pipeline.datasource
+        datasource = self._pipeline.datasource
         sheet_values = self._sheet_client.values()
         result = sheet_values.get(spreadsheetId=datasource.sheet_id, range=datasource.sheet_range).execute()
         values = result.get("values", [])
@@ -45,7 +45,7 @@ class GoogleSheetFetcher(Fetcher):
         rows = values[1:]
 
         # Create Polars DataFrame
-        schema = {col.name: POLARS_SCHEMA_OVERRIDE[col.type] for col in pipeline.columns}
+        schema = {col.name: POLARS_SCHEMA_OVERRIDE[col.type] for col in self._pipeline.columns}
         df = DataFrame(rows, schema=schema, orient="row", infer_schema_length=0)
 
         return df

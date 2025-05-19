@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 from wealthz.constants import SECRETS_DIR
 from wealthz.fetchers import GoogleSheetFetcher
 from wealthz.generics import T
+from wealthz.model import ETLPipeline
 
 SPREADSHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -34,10 +35,11 @@ class GoogleCredentialsFactory(Factory[Credentials]):
 
 
 class GoogleSheetFetcherFactory(Factory[GoogleSheetFetcher]):
-    def __init__(self, credentials_file: str) -> None:
-        self._credentials_path = SECRETS_DIR / credentials_file
+    def __init__(self, pipeline: ETLPipeline) -> None:
+        self._pipeline = pipeline
+        self._credentials_path = SECRETS_DIR / pipeline.datasource.credentials_file
 
     def create(self) -> GoogleSheetFetcher:
         creds_manager = GoogleCredentialsFactory(self._credentials_path, scope=GoogleCredentialsScope.SPREADSHEETS)
         credentials = creds_manager.create()
-        return GoogleSheetFetcher(credentials)
+        return GoogleSheetFetcher(self._pipeline, credentials)

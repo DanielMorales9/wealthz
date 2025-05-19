@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from conftest import GSHEET_ETL_PIPELINE
+
 from wealthz.factories import (
     SPREADSHEETS_SCOPES,
     GoogleCredentialsFactory,
@@ -12,7 +14,7 @@ from wealthz.fetchers import GoogleSheetFetcher
 
 @patch("wealthz.factories.Credentials.from_service_account_file")
 def test_gsheet_fetcher_factory(_):
-    factory = GoogleSheetFetcherFactory("mock-creds.json")
+    factory = GoogleSheetFetcherFactory(GSHEET_ETL_PIPELINE)
     assert isinstance(factory.create(), GoogleSheetFetcher)
 
 

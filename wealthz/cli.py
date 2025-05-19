@@ -17,10 +17,9 @@ def run(name: str) -> None:
     config_path = CONFIG_DIR / f"{name}.yaml"
     pipeline = ETLPipeline.from_yaml(config_path)
 
-    credentials_file = pipeline.datasource.credentials_file
-    factory = GoogleSheetFetcherFactory(credentials_file)
+    factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
     loader = DuckDBLoader(pipeline, DUCKDB_LOCAL_META_PATH, DUCKDB_LOCAL_DATA_PATH)
 
-    df = fetcher.fetch(pipeline)
+    df = fetcher.fetch()
     loader.load(df)
