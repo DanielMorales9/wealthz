@@ -1,7 +1,10 @@
 from enum import StrEnum
-from typing import Union
+from pathlib import Path
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from wealthz.utils import load_yaml
 
 
 class BaseConfig(BaseModel):
@@ -28,13 +31,23 @@ class Table(BaseConfig):
     columns: list[Column]
 
 
+class DatasourceType(StrEnum):
+    GOOGLE_SHEET = "gsheet"
+
+
 class GoogleSheetDatasource(BaseModel):
-    id: str
-    range: str
+    type: Literal[DatasourceType.GOOGLE_SHEET]
+    sheet_id: str
+    sheet_range: str
 
 
-Datasource = Union[GoogleSheetDatasource]
+Datasource = Annotated[Union[GoogleSheetDatasource], Field(discriminator="type")]
 
 
 class ETLPipeline(Table):
     datasource: Datasource
+
+    @classmethod
+    def from_yaml(cls, file_path: Path) -> "ETLPipeline":
+        obj = load_yaml(file_path)
+        return ETLPipeline.model_validate(obj)
