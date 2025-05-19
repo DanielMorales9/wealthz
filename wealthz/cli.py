@@ -1,6 +1,6 @@
 import click as click
 
-from wealthz.constants import CONFIG_DIR, DUCKDB_DATA_PATH, DUCKDB_META_PATH
+from wealthz.constants import CONFIG_DIR, DUCKDB_LOCAL_DATA_PATH, DUCKDB_LOCAL_META_PATH
 from wealthz.factories import GoogleSheetFetcherFactory
 from wealthz.loaders import DuckDBLoader
 from wealthz.model import ETLPipeline
@@ -20,7 +20,7 @@ def run(name: str) -> None:
     credentials_file = pipeline.datasource.credentials_file
     factory = GoogleSheetFetcherFactory(credentials_file)
     fetcher = factory.create()
-    loader = DuckDBLoader(DUCKDB_META_PATH, DUCKDB_DATA_PATH)
+    loader = DuckDBLoader(DUCKDB_LOCAL_META_PATH, DUCKDB_LOCAL_DATA_PATH)
 
     df = fetcher.fetch(pipeline)
     loader.load(df, pipeline)

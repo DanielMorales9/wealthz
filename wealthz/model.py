@@ -50,7 +50,8 @@ class EngineType(StrEnum):
 
 
 class StorageType(StrEnum):
-    FS = "fs"
+    LOCAL = "local"
+    GCS = "gcs"
 
 
 class Engine(BaseConfig):

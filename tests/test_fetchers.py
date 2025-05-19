@@ -22,7 +22,7 @@ def mock_gsheet():
     [
         (
             ETLPipeline(
-                engine={"type": "duckdb", "storage": "fs"},
+                engine={"type": "duckdb", "storage": "local"},
                 schema="test_schema",
                 name="test_name",
                 columns=[
