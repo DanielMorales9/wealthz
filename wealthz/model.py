@@ -36,7 +36,7 @@ class DatasourceType(StrEnum):
 
 
 class GoogleSheetDatasource(BaseModel):
-    type: Literal[DatasourceType.GOOGLE_SHEET]
+    type: Literal[DatasourceType.GOOGLE_SHEET] = DatasourceType.GOOGLE_SHEET
     sheet_id: str
     sheet_range: str
 
