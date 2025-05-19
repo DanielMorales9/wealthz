@@ -169,4 +169,5 @@ cython_debug/
 
 # secrets
 secrets/*.json
-config/*.(yaml|yml)
+config/*.yaml
+config/*.yml
