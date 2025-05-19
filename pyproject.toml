@@ -24,6 +24,7 @@ pytest = "^7.2.0"
 mypy = "^1.5.1"
 pre-commit = "^3.4.0"
 tox = "^4.11.1"
+pytest-cov = "^6.1.1"
 
 
 
@@ -44,6 +45,8 @@ show_error_codes = "True"
 
 
 [tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=50 --tb=short"
 testpaths = ["tests"]
 
 [tool.ruff]
