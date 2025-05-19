@@ -171,3 +171,4 @@ cython_debug/
 secrets/*.json
 config/*.yaml
 config/*.yml
+dwh/*
