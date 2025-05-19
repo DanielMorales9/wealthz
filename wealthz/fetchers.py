@@ -1,16 +1,27 @@
 import abc
 from abc import ABC
 
+import polars
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from polars import DataFrame
 
-from wealthz.model import ETLPipeline
+from wealthz.model import ColumnType, ETLPipeline
 
 
 class Fetcher(ABC):
     @abc.abstractmethod
     def fetch(self, pipeline: ETLPipeline) -> DataFrame: ...
+
+
+POLARS_SCHEMA_OVERRIDE = {
+    ColumnType.STRING: polars.String,
+    ColumnType.INTEGER: polars.Int32,
+    ColumnType.FLOAT: polars.Float32,
+    ColumnType.BOOLEAN: polars.Boolean,
+    ColumnType.DATE: polars.Date,
+    ColumnType.TIMESTAMP: polars.Datetime,
+}
 
 
 class GoogleSheetFetcher(Fetcher):
@@ -31,10 +42,10 @@ class GoogleSheetFetcher(Fetcher):
             return DataFrame()
 
         # First row as header
-        headers = values[0]
-        data_rows = values[1:]
+        rows = values[1:]
 
         # Create Polars DataFrame
-        df = DataFrame(data_rows, schema=headers, orient="row")
+        schema = {col.name: POLARS_SCHEMA_OVERRIDE[col.type] for col in pipeline.columns}
+        df = DataFrame(rows, schema=schema, orient="row", infer_schema_length=0)
 
         return df
