@@ -38,10 +38,10 @@ def test_duckdb_loader(tmp_path, pipeline, data, expected):
     conn = duckdb.connect(meta_file)
 
     # Create a DuckDBLoader instance
-    loader = DuckDBLoader(db_path=meta_file, base_path=data_path)
+    loader = DuckDBLoader(pipeline, db_path=meta_file, base_path=data_path)
 
     # Call the load method
-    loader.load(df, pipeline)
+    loader.load(df)
 
     # Check if the database file was created
     query_template = Template("SELECT * from $schema.$name")

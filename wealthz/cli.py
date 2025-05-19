@@ -20,7 +20,7 @@ def run(name: str) -> None:
     credentials_file = pipeline.datasource.credentials_file
     factory = GoogleSheetFetcherFactory(credentials_file)
     fetcher = factory.create()
-    loader = DuckDBLoader(DUCKDB_LOCAL_META_PATH, DUCKDB_LOCAL_DATA_PATH)
+    loader = DuckDBLoader(pipeline, DUCKDB_LOCAL_META_PATH, DUCKDB_LOCAL_DATA_PATH)
 
     df = fetcher.fetch(pipeline)
-    loader.load(df, pipeline)
+    loader.load(df)

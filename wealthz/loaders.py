@@ -14,21 +14,22 @@ from wealthz.model import ETLPipeline
 
 class Loader(ABC, Generic[T]):
     @abc.abstractmethod
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None: ...
+    def load(self, df: DataFrame) -> None: ...
 
 
 class DuckDBLoader(Loader):
-    def __init__(self, db_path: Path, base_path: Path) -> None:
+    def __init__(self, pipeline: ETLPipeline, db_path: Path, base_path: Path) -> None:
+        self._pipeline = pipeline
         self._conn = duckdb.connect(db_path)
         self._base_path = base_path
 
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+    def load(self, df: DataFrame) -> None:
         # Register the in-memory DataFrame as a DuckDB relation
-        self._conn.execute(f"CREATE SCHEMA IF NOT EXISTS {pipeline.schema_}")
+        self._conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self._pipeline.schema_}")
         self._conn.register("df", df.to_arrow())
 
         # Write to Parquet
-        table_path = self._base_path / pipeline.schema_ / pipeline.name / "data.parquet"
+        table_path = self._base_path / self._pipeline.schema_ / self._pipeline.name / "data.parquet"
         os.makedirs(os.path.dirname(table_path), exist_ok=True)
 
         copy_template = Template("COPY df TO '$path' (FORMAT PARQUET);")
@@ -37,6 +38,8 @@ class DuckDBLoader(Loader):
 
         # Create external table
         create_template = Template("CREATE OR REPLACE TABLE $schema.$table AS SELECT * FROM '$path';")
-        create_stmt = create_template.substitute(path=table_path, schema=pipeline.schema_, table=pipeline.name)
+        create_stmt = create_template.substitute(
+            path=table_path, schema=self._pipeline.schema_, table=self._pipeline.name
+        )
         self._conn.execute(create_stmt)
         self._conn.close()
