@@ -13,6 +13,7 @@ from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDatasource
     [
         (
             ETLPipeline(
+                engine={"type": "duckdb", "storage": "fs"},
                 schema="public",
                 name="test_pipeline",
                 datasource=GoogleSheetDatasource(

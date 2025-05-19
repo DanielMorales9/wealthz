@@ -6,6 +6,9 @@ from click.testing import CliRunner
 from wealthz.cli import cli  # update as needed
 
 TEST_PIPELINE_YAML = """
+engine:
+  type: duckdb
+  storage: fs
 schema: public
 name: transactions_raw
 datasource:

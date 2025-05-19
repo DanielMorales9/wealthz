@@ -45,7 +45,21 @@ class GoogleSheetDatasource(BaseModel):
 Datasource = Annotated[Union[GoogleSheetDatasource], Field(discriminator="type")]
 
 
+class EngineType(StrEnum):
+    DUCKDB = "duckdb"
+
+
+class StorageType(StrEnum):
+    FS = "fs"
+
+
+class Engine(BaseConfig):
+    type: EngineType
+    storage: StorageType
+
+
 class ETLPipeline(Table):
+    engine: Engine
     datasource: Datasource
 
     @classmethod
