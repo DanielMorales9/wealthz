@@ -1,7 +1,8 @@
 import click as click
 
-from wealthz.constants import CONFIG_DIR
+from wealthz.constants import CONFIG_DIR, DUCKDB_DATA_PATH, DUCKDB_META_PATH
 from wealthz.factories import GoogleSheetFetcherFactory
+from wealthz.loaders import DuckDBLoader
 from wealthz.model import ETLPipeline
 
 
@@ -10,15 +11,16 @@ def cli() -> None:
     pass
 
 
-@cli.command("extract")
+@cli.command("run")
 @click.argument("name")
-def extract(name: str) -> None:
+def run(name: str) -> None:
     config_path = CONFIG_DIR / f"{name}.yaml"
     pipeline = ETLPipeline.from_yaml(config_path)
 
-    file = pipeline.datasource.credentials_file
-    factory = GoogleSheetFetcherFactory(file)
+    credentials_file = pipeline.datasource.credentials_file
+    factory = GoogleSheetFetcherFactory(credentials_file)
     fetcher = factory.create()
+    loader = DuckDBLoader(DUCKDB_META_PATH, DUCKDB_DATA_PATH)
 
     df = fetcher.fetch(pipeline)
-    print(df)
+    loader.load(df, pipeline)
