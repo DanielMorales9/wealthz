@@ -12,7 +12,7 @@ from wealthz.fetchers import GoogleSheetFetcher
 
 @patch("wealthz.factories.Credentials.from_service_account_file")
 def test_gsheet_fetcher_factory(_):
-    factory = GoogleSheetFetcherFactory()
+    factory = GoogleSheetFetcherFactory("mock-creds.json")
     assert isinstance(factory.create(), GoogleSheetFetcher)
 
 

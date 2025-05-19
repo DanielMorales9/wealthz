@@ -32,6 +32,7 @@ def mock_gsheet():
                     "type": "gsheet",
                     "sheet_id": "test-id",
                     "sheet_range": "test-sheet-range",
+                    "credentials_file": "mock-creds.json",
                 },
             ),
             {

@@ -1,5 +1,8 @@
-import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 def pytest_configure():
-    os.environ["GOOGLE_CREDENTIALS_FILENAME"] = "mock_creds.json"
+    test_env_path = Path(__file__).parent.parent / ".env.test"
+    load_dotenv(dotenv_path=test_env_path, override=True)

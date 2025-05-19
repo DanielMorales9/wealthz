@@ -15,7 +15,9 @@ from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDatasource
             ETLPipeline(
                 schema="public",
                 name="test_pipeline",
-                datasource=GoogleSheetDatasource(sheet_id="test_sheet_id", sheet_range="A1:B2"),
+                datasource=GoogleSheetDatasource(
+                    sheet_id="test_sheet_id", sheet_range="A1:B2", credentials_file="mock_creds.json"
+                ),
                 columns=[
                     Column(name="column1", type=ColumnType.INTEGER),
                     Column(name="column2", type=ColumnType.STRING),

@@ -5,7 +5,7 @@ from typing import Generic
 
 from google.oauth2.service_account import Credentials
 
-from wealthz.constants import GOOGLE_CREDENTIALS_FILENAME, SECRETS_PATH
+from wealthz.constants import SECRETS_DIR
 from wealthz.fetchers import GoogleSheetFetcher
 from wealthz.generics import T
 
@@ -34,8 +34,8 @@ class GoogleCredentialsFactory(Factory[Credentials]):
 
 
 class GoogleSheetFetcherFactory(Factory[GoogleSheetFetcher]):
-    def __init__(self) -> None:
-        self._credentials_path = SECRETS_PATH / GOOGLE_CREDENTIALS_FILENAME
+    def __init__(self, credentials_file: str) -> None:
+        self._credentials_path = SECRETS_DIR / credentials_file
 
     def create(self) -> GoogleSheetFetcher:
         creds_manager = GoogleCredentialsFactory(self._credentials_path, scope=GoogleCredentialsScope.SPREADSHEETS)

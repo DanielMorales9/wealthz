@@ -13,13 +13,12 @@ def cli() -> None:
 @cli.command("extract")
 @click.argument("name")
 def extract(name: str) -> None:
-    factory = GoogleSheetFetcherFactory()
-    fetcher = factory.create()
     config_path = CONFIG_DIR / f"{name}.yaml"
     pipeline = ETLPipeline.from_yaml(config_path)
+
+    file = pipeline.datasource.credentials_file
+    factory = GoogleSheetFetcherFactory(file)
+    fetcher = factory.create()
+
     df = fetcher.fetch(pipeline)
     print(df)
-
-
-if __name__ == "__main__":
-    cli()

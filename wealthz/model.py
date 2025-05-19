@@ -39,6 +39,7 @@ class GoogleSheetDatasource(BaseModel):
     type: Literal[DatasourceType.GOOGLE_SHEET] = DatasourceType.GOOGLE_SHEET
     sheet_id: str
     sheet_range: str
+    credentials_file: str
 
 
 Datasource = Annotated[Union[GoogleSheetDatasource], Field(discriminator="type")]
