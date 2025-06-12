@@ -11,7 +11,7 @@ def pytest_configure():
 
 
 GSHEET_ETL_PIPELINE = ETLPipeline(
-    engine={"type": "duckdb", "storage": "local"},
+    engine={"type": "duckdb"},
     schema="test_schema",
     name="test_name",
     columns=[

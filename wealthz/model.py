@@ -49,14 +49,8 @@ class EngineType(StrEnum):
     DUCKDB = "duckdb"
 
 
-class StorageType(StrEnum):
-    LOCAL = "local"
-    GCS = "gcs"
-
-
 class Engine(BaseConfig):
     type: EngineType
-    storage: StorageType
 
 
 class ETLPipeline(Table):

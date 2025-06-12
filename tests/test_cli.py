@@ -8,7 +8,6 @@ from wealthz.cli import cli  # update as needed
 TEST_PIPELINE_YAML = """
 engine:
   type: duckdb
-  storage: local
 schema: public
 name: transactions_raw
 datasource:
@@ -37,8 +36,6 @@ def test_cli_run_command(runner, tmp_path):
     # Patch constants and dependencies
     with (
         patch("wealthz.cli.CONFIG_DIR", config_dir),
-        patch("wealthz.cli.DUCKDB_LOCAL_META_PATH", tmp_path / "meta.duckdb"),
-        patch("wealthz.cli.DUCKDB_LOCAL_DATA_PATH", tmp_path / "data"),
         patch("wealthz.cli.GoogleSheetFetcherFactory") as mock_factory,
         patch("wealthz.cli.DuckDBLoader") as mock_loader,
     ):

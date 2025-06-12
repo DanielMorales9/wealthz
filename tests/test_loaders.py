@@ -1,11 +1,23 @@
+import os
+import shutil
+from pathlib import Path
 from string import Template
 
 import duckdb
 import pytest
 from polars import DataFrame
 
+from wealthz.constants import DUCKDB_LOCAL_META_PATH
 from wealthz.loaders import DuckDBLoader
 from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDatasource
+
+
+@pytest.fixture(autouse=True)
+def dwh_dir():
+    metadata = Path(DUCKDB_LOCAL_META_PATH)
+    metadata.parent.mkdir(parents=True, exist_ok=True)
+    yield metadata.parent
+    shutil.rmtree(os.path.dirname(DUCKDB_LOCAL_META_PATH))
 
 
 @pytest.mark.parametrize(
@@ -13,7 +25,7 @@ from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDatasource
     [
         (
             ETLPipeline(
-                engine={"type": "duckdb", "storage": "local"},
+                engine={"type": "duckdb"},
                 schema="public",
                 name="test_pipeline",
                 datasource=GoogleSheetDatasource(
@@ -29,16 +41,12 @@ from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDatasource
         )
     ],
 )
-def test_duckdb_loader(tmp_path, pipeline, data, expected):
+def test_duckdb_loader(dwh_dir, pipeline, data, expected):
     df = DataFrame(data)
-    meta_file = tmp_path / "meta.duckdb"
-    data_path = tmp_path / "data"
-    data_path.mkdir(parents=True, exist_ok=True)
-
-    conn = duckdb.connect(meta_file)
+    conn = duckdb.connect(DUCKDB_LOCAL_META_PATH)
 
     # Create a DuckDBLoader instance
-    loader = DuckDBLoader(pipeline, db_path=meta_file, base_path=data_path)
+    loader = DuckDBLoader(pipeline)
 
     # Call the load method
     loader.load(df)

@@ -1,6 +1,6 @@
 import click as click
 
-from wealthz.constants import CONFIG_DIR, DUCKDB_LOCAL_DATA_PATH, DUCKDB_LOCAL_META_PATH
+from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
 from wealthz.loaders import DuckDBLoader
 from wealthz.model import ETLPipeline
@@ -19,7 +19,7 @@ def run(name: str) -> None:
 
     factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
-    loader = DuckDBLoader(pipeline, DUCKDB_LOCAL_META_PATH, DUCKDB_LOCAL_DATA_PATH)
+    loader = DuckDBLoader(pipeline)
 
     df = fetcher.fetch()
     loader.load(df)
