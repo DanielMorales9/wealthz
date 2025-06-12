@@ -169,7 +169,7 @@ cython_debug/
 .envrc
 
 # secrets
-secrets/*.json
+secrets/
 config/*.yaml
 config/*.yml
 dwh/*
