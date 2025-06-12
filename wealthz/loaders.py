@@ -6,6 +6,7 @@ from string import Template
 from typing import Generic
 
 import duckdb
+import polars as pl
 from polars import DataFrame
 
 from wealthz.constants import DUCKDB_LOCAL_DATA_PATH, DUCKDB_LOCAL_META_PATH
@@ -22,6 +23,16 @@ class DuckDBLoader(Loader):
     def __init__(self, pipeline: ETLPipeline) -> None:
         self._pipeline = pipeline
         self._conn = duckdb.connect(DUCKDB_LOCAL_META_PATH)
+        # Install and load the ducklake extension
+        self._conn.execute("INSTALL ducklake;")
+        self._conn.execute("LOAD ducklake;")
+
+        # Verify the extension is loaded
+        arrow_table = self._conn.execute(
+            "SELECT extension_name, installed, description FROM duckdb_extensions() where installed;"
+        ).arrow()
+        df = pl.from_arrow(arrow_table)
+        print(df)
         self._base_path = DUCKDB_LOCAL_DATA_PATH
 
     def load(self, df: DataFrame) -> None:
