@@ -9,7 +9,7 @@ from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
 from tests.conftest import GSHEET_ETL_PIPELINE
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, StorageSettings
 from wealthz.model import ETLPipeline
 
 
@@ -72,15 +72,15 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
         bucket_name = "test-bucket"
         minio_client.make_bucket(bucket_name)
 
-        s3_config = {
-            "type": "s3",
-            "endpoint": minio.get_config()["endpoint"],
-            "region": "us-east-1",
-            "access_key_id": minio.access_key,
-            "secret_access_key": minio.secret_key,
-            "url_style": "path",
-            "use_ssl": False,
-        }
+        storage_settings = StorageSettings(
+            type="s3",
+            endpoint=minio.get_config()["endpoint"],
+            region="us-east-1",
+            access_key_id=minio.access_key,
+            secret_access_key=minio.secret_key,
+            url_style="path",
+            use_ssl=False,
+        )
         pg_config = {
             "dbname": postgres_container.dbname,
             "host": postgres_container.get_container_host_ip(),
@@ -90,7 +90,7 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
         }
         data_path = f"s3://{bucket_name}/data"
 
-        manager = DuckLakeConnManager(s3_config, pg_config, data_path)
+        manager = DuckLakeConnManager(storage_settings, pg_config, data_path)
         conn = manager.provision()
 
         # Create table and insert test data

@@ -6,6 +6,7 @@ from typing import Any, ClassVar, Generic
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
 from polars import DataFrame
+from pydantic.v1 import BaseSettings
 
 from wealthz.generics import T
 from wealthz.logutils import get_logger
@@ -60,17 +61,31 @@ $columns_def
         logger.info("Number of Inserted rows: %s", stats)
 
 
+class StorageSettings(BaseSettings):
+    type: str
+    access_key_id: str
+    secret_access_key: str
+    endpoint: str | None = None
+    region: str | None = None
+    url_style: str | None = None
+    use_ssl: bool | None = None
+
+    class Config:
+        env_prefix = "STORAGE_"
+        case_sensitive = False
+
+
 class DuckLakeConnManager:
     EXTENSIONS: ClassVar[list[str]] = ["ducklake", "postgres"]
     SCHEMAS: ClassVar[list[str]] = ["public"]
 
-    def __init__(self, s3_config: dict[str, Any], pg_config: dict[str, Any], data_path: str) -> None:
+    def __init__(self, storage_settings: StorageSettings, pg_config: dict[str, Any], data_path: str) -> None:
         self._conn = duckdb.connect()
         version = self._conn.execute("SELECT version()").fetchone()
         if version:
             logger.info(f"DuckDB version: {version[0]}")
 
-        self._storage_config = s3_config
+        self._storage_settings = storage_settings
         self._pg_config = pg_config
         self._data_path = data_path
 
@@ -81,23 +96,27 @@ class DuckLakeConnManager:
 
     def configure_storage(self) -> None:
         # Configure DuckDB to use remote storage
-        storage_type = self._storage_config["type"]
-        match storage_type:
+        match self._storage_settings.type:
             case "s3":
-                for key, value in self._storage_config.items():
-                    if key == "type":
-                        continue
-                    self._conn.execute(f"SET s3_{key}='{value}';")
+                self.configure_s3_storage()
             case "gcs":
-                self._conn.execute(
-                    f"""CREATE OR REPLACE SECRET gcs_secret(
-                    TYPE gcs,
-                    KEY_ID '{self._storage_config["access_key_id"]}',
-                    SECRET '{self._storage_config["secret_access_key"]}'
-                )""",
-                )
+                self.configure_gcs_storage()
             case _:
                 raise NotImplementedError
+
+    def configure_gcs_storage(self) -> None:
+        self._conn.execute(
+            f"""CREATE OR REPLACE SECRET gcs_secret (
+                    TYPE gcs,
+                    KEY_ID '{self._storage_settings.access_key_id}',
+                    SECRET '{self._storage_settings.secret_access_key}'
+                )""",
+        )
+
+    def configure_s3_storage(self) -> None:
+        for key, value in self._storage_settings.dict().items():
+            if not (key == "type" or value is None):
+                self._conn.execute(f"SET s3_{key}='{value}';")
 
     def attach_ducklake_house(self) -> None:
         # Attach DuckLake catalog

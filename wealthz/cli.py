@@ -4,7 +4,7 @@ import click as click
 
 from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, StorageSettings
 from wealthz.model import ETLPipeline
 
 
@@ -21,12 +21,8 @@ def run(name: str) -> None:
 
     factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
-    S3_CONFIG = {
-        "type": "gcs",
-        "endpoint": os.environ["STORAGE_ENDPOINT"],
-        "access_key_id": os.environ["STORAGE_ACCESS_KEY_ID"],
-        "secret_access_key": os.environ["STORAGE_SECRET_ACCESS_KEY"],
-    }
+    storage_settings = StorageSettings()  # type: ignore[call-arg]
+
     PG_CATALOG = {
         "dbname": os.environ["PG_DBNAME"],
         "host": os.environ["PG_HOST"],
@@ -36,7 +32,7 @@ def run(name: str) -> None:
     }
     DATA_PATH = os.environ["S3_DATA_PATH"]
 
-    manager = DuckLakeConnManager(S3_CONFIG, PG_CATALOG, DATA_PATH)
+    manager = DuckLakeConnManager(storage_settings, PG_CATALOG, DATA_PATH)
     conn = manager.provision()
     loader = DuckLakeLoader(conn)
 
