@@ -26,7 +26,7 @@ class Column(BaseConfig):
 
 
 class Table(BaseConfig):
-    schema_: str = Field(..., alias="schema")
+    destination_schema: str = Field(..., alias="schema")
     name: str
     columns: list[Column]
 
