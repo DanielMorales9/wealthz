@@ -73,6 +73,7 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
         minio_client.make_bucket(bucket_name)
 
         s3_config = {
+            "type": "s3",
             "endpoint": minio.get_config()["endpoint"],
             "region": "us-east-1",
             "access_key_id": minio.access_key,
@@ -89,23 +90,17 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
         }
         data_path = f"s3://{bucket_name}/data"
 
-        conn_manager = DuckLakeConnManager(s3_config, pg_config, data_path)
-        conn = conn_manager.run()
+        manager = DuckLakeConnManager(s3_config, pg_config, data_path)
+        conn = manager.provision()
 
         # Create table and insert test data
         df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
         # Register the dataframe as a DuckDB view
-        conn.execute("CREATE TABLE public.people (id INTEGER, name VARCHAR)")
-
         DuckLakeLoader(conn).load(df, TEST_PEOPLE_PIPELINE)
-        # execute_with_log(conn, "INSERT INTO ducklake.public.people SELECT * FROM staging_df")
 
         # Query back the data
-
         result = conn.execute("SELECT * FROM public.people").pl()
 
         assert result.shape == (2, 2)
 
         assert result.sort("id")["name"].to_list() == ["Alice", "Bob"]
-
-        print("Integration test passed: MinIO + Postgres + DuckLake + Polars ✔️")

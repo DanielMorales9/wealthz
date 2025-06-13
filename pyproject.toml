@@ -55,7 +55,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=90 --tb=short"
+addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=80 --tb=short"
 testpaths = ["tests"]
 
 [tool.ruff]

@@ -19,15 +19,45 @@ class Loader(ABC, Generic[T]):
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None: ...
 
 
+DUCKDB_TYPES_MAP = {"string": "varchar"}
+
+
 class DuckLakeLoader(Loader):
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
 
+    def ensure_table_exists(self, pipeline: ETLPipeline) -> None:
+        columns_def = ",\n".join(
+            f"\t{column.name} {DUCKDB_TYPES_MAP.get(column.type, column.type).upper()}" for column in pipeline.columns
+        )
+        create_stmt = """CREATE TABLE IF NOT EXISTS $schema_name.$table_name (
+$columns_def
+)"""
+        query = self.build_query(
+            create_stmt, table_name=pipeline.name, schema_name=pipeline.destination_schema, columns_def=columns_def
+        )
+        logger.info(query)
+        self.conn.execute(query)
+
+    def build_append_query(self, pipeline: ETLPipeline) -> str:
+        columns = ",".join(column.name for column in pipeline.columns)
+        query_template = "INSERT INTO $schema_name.$table_name ($columns) SELECT $columns FROM staging"
+        return self.build_query(
+            query_template, table_name=pipeline.name, schema_name=pipeline.destination_schema, columns=columns
+        )
+
+    @staticmethod
+    def build_query(query: str, **kwargs: str) -> str:
+        query_template = Template(query)
+        return query_template.substitute(**kwargs)
+
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        self.ensure_table_exists(pipeline)
         self.conn.register("staging", df)
-        query_template = Template("INSERT INTO $schema_name.$table_name SELECT * FROM staging")
-        insert_query = query_template.substitute(table_name=pipeline.name, schema_name=pipeline.destination_schema)
-        self.conn.execute(insert_query)
+        insert_query = self.build_append_query(pipeline)
+        result = self.conn.execute(insert_query).fetchone()
+        stats = result[0] if result else -1
+        logger.info("Number of Inserted rows: %s", stats)
 
 
 class DuckLakeConnManager:
@@ -40,7 +70,7 @@ class DuckLakeConnManager:
         if version:
             logger.info(f"DuckDB version: {version[0]}")
 
-        self._s3_config = s3_config
+        self._storage_config = s3_config
         self._pg_config = pg_config
         self._data_path = data_path
 
@@ -49,26 +79,40 @@ class DuckLakeConnManager:
             self._conn.execute(f"INSTALL {extension};")
             self._conn.execute(f"LOAD {extension};")
 
-    def configure_s3_parameters(self) -> None:
-        # Configure DuckDB to use S3-compatible API
-        for key, value in self._s3_config.items():
-            self._conn.execute(f"SET s3_{key}='{value}';")
+    def configure_storage(self) -> None:
+        # Configure DuckDB to use remote storage
+        storage_type = self._storage_config["type"]
+        match storage_type:
+            case "s3":
+                for key, value in self._storage_config.items():
+                    if key == "type":
+                        continue
+                    self._conn.execute(f"SET s3_{key}='{value}';")
+            case "gcs":
+                self._conn.execute(
+                    f"""CREATE OR REPLACE SECRET gcs_secret(
+                    TYPE gcs,
+                    KEY_ID '{self._storage_config["access_key_id"]}',
+                    SECRET '{self._storage_config["secret_access_key"]}'
+                )""",
+                )
+            case _:
+                raise NotImplementedError
 
     def attach_ducklake_house(self) -> None:
         # Attach DuckLake catalog
         connection_string = " ".join(f"{key}={value}" for key, value in self._pg_config.items())
-        self._conn.execute(
-            f"ATTACH 'ducklake:postgres:{connection_string}' AS ducklake (DATA_PATH '{self._data_path}');"
-        )
+        attach_command = f"ATTACH 'ducklake:postgres:{connection_string}' AS ducklake (DATA_PATH '{self._data_path}');"
+        self._conn.execute(attach_command)
         self._conn.execute("USE ducklake")
 
     def ensure_schemas_exists(self) -> None:
         for schema in self.SCHEMAS:
             self._conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
-    def run(self) -> DuckDBPyConnection:  # type: ignore[no-any-unimported]
+    def provision(self) -> DuckDBPyConnection:  # type: ignore[no-any-unimported]
         self.install_and_load_extensions()
-        self.configure_s3_parameters()
+        self.configure_storage()
         self.attach_ducklake_house()
         self.ensure_schemas_exists()
         return self._conn
