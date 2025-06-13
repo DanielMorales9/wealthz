@@ -2,7 +2,6 @@ import click as click
 
 from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckDBLoader
 from wealthz.model import ETLPipeline
 
 
@@ -19,7 +18,6 @@ def run(name: str) -> None:
 
     factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
-    loader = DuckDBLoader(pipeline)
 
     df = fetcher.fetch()
-    loader.load(df)
+    print(df)

@@ -37,16 +37,12 @@ def test_cli_run_command(runner, tmp_path):
     with (
         patch("wealthz.cli.CONFIG_DIR", config_dir),
         patch("wealthz.cli.GoogleSheetFetcherFactory") as mock_factory,
-        patch("wealthz.cli.DuckDBLoader") as mock_loader,
     ):
         # Mock return values
         mock_df = MagicMock(name="DataFrame")
         fetcher_instance = MagicMock()
         fetcher_instance.fetch.return_value = mock_df
         mock_factory.return_value.create.return_value = fetcher_instance
-
-        loader_instance = MagicMock()
-        mock_loader.return_value = loader_instance
 
         # Run CLI
         result = runner.invoke(cli, ["run", "example"])
@@ -55,4 +51,3 @@ def test_cli_run_command(runner, tmp_path):
         # Assertions
         mock_factory.assert_called_once()
         fetcher_instance.fetch.assert_called_once()
-        loader_instance.load.assert_called_once()

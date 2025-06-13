@@ -1,57 +1,30 @@
 import abc
-import os
 from abc import ABC
-from pathlib import Path
 from string import Template
 from typing import Generic
 
 import duckdb
-import polars as pl
 from polars import DataFrame
 
-from wealthz.constants import DUCKDB_LOCAL_DATA_PATH, DUCKDB_LOCAL_META_PATH
 from wealthz.generics import T
 from wealthz.model import ETLPipeline
 
 
 class Loader(ABC, Generic[T]):
     @abc.abstractmethod
-    def load(self, df: DataFrame) -> None: ...
+    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None: ...
 
 
-class DuckDBLoader(Loader):
-    def __init__(self, pipeline: ETLPipeline) -> None:
-        self._pipeline = pipeline
-        self._conn = duckdb.connect(DUCKDB_LOCAL_META_PATH)
-        # Install and load the ducklake extension
-        self._conn.execute("INSTALL ducklake;")
-        self._conn.execute("LOAD ducklake;")
+class DuckLakeLoader(Loader):
+    def __init__(self, conn: duckdb.DuckDBPyConnection):
+        self.conn = conn
 
-        # Verify the extension is loaded
-        arrow_table = self._conn.execute(
-            "SELECT extension_name, installed, description FROM duckdb_extensions() where installed;"
-        ).arrow()
-        df = pl.from_arrow(arrow_table)
-        print(df)
-        self._base_path = DUCKDB_LOCAL_DATA_PATH
-
-    def load(self, df: DataFrame) -> None:
-        # Register the in-memory DataFrame as a DuckDB relation
-        self._conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self._pipeline.schema_}")
-        self._conn.register("df", df.to_arrow())
-
-        # Write to Parquet
-        table_path = Path(self._base_path) / self._pipeline.schema_ / self._pipeline.name / "data.parquet"
-        os.makedirs(os.path.dirname(table_path), exist_ok=True)
-
-        copy_template = Template("COPY df TO '$path' (FORMAT PARQUET);")
-        copy_stmt = copy_template.substitute(path=str(table_path))
-        self._conn.execute(copy_stmt)
-
-        # Create external table
-        create_template = Template("CREATE OR REPLACE TABLE $schema.$table AS SELECT * FROM '$path';")
-        create_stmt = create_template.substitute(
-            path=table_path, schema=self._pipeline.schema_, table=self._pipeline.name
+    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        query_template = Template("INSERT INTO ducklake.$schema_name.$table_name SELECT * FROM df")
+        insert_query = query_template.substitute(table_name=pipeline.name, schema_name=pipeline.schema_)
+        self.conn.execute(
+            insert_query,
+            {
+                "df": df,
+            },
         )
-        self._conn.execute(create_stmt)
-        self._conn.close()
