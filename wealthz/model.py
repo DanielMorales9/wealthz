@@ -1,4 +1,5 @@
 from enum import StrEnum
+from functools import cached_property
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
@@ -29,6 +30,10 @@ class Table(BaseConfig):
     destination_schema: str = Field(..., alias="schema")
     name: str
     columns: list[Column]
+
+    @cached_property
+    def column_names(self) -> list[str]:
+        return [column.name for column in self.columns]
 
 
 class DatasourceType(StrEnum):
