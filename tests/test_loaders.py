@@ -9,7 +9,7 @@ from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
 from tests.conftest import GSHEET_ETL_PIPELINE
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, StorageSettings
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, PostgresCatalogSettings, StorageSettings
 from wealthz.model import ETLPipeline
 
 
@@ -80,17 +80,17 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
             secret_access_key=minio.secret_key,
             url_style="path",
             use_ssl=False,
+            data_path=f"s3://{bucket_name}/data",
         )
-        pg_config = {
-            "dbname": postgres_container.dbname,
-            "host": postgres_container.get_container_host_ip(),
-            "port": postgres_container.get_exposed_port(5432),
-            "user": postgres_container.username,
-            "password": postgres_container.password,
-        }
-        data_path = f"s3://{bucket_name}/data"
+        pg_config = PostgresCatalogSettings(
+            dbname=postgres_container.dbname,
+            host=postgres_container.get_container_host_ip(),
+            port=postgres_container.get_exposed_port(5432),
+            user=postgres_container.username,
+            password=postgres_container.password,
+        )
 
-        manager = DuckLakeConnManager(storage_settings, pg_config, data_path)
+        manager = DuckLakeConnManager(storage_settings, pg_config)
         conn = manager.provision()
 
         # Create table and insert test data

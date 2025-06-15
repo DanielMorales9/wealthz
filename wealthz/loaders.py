@@ -1,7 +1,7 @@
 import abc
 from abc import ABC
 from string import Template
-from typing import Any, ClassVar, Generic
+from typing import ClassVar, Generic
 
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
@@ -33,7 +33,7 @@ class DuckLakeLoader(Loader):
         )
         create_stmt = """CREATE TABLE IF NOT EXISTS $schema_name.$table_name (
 $columns_def
-)"""
+);"""
         query = self.build_query(
             create_stmt, table_name=pipeline.name, schema_name=pipeline.destination_schema, columns_def=columns_def
         )
@@ -42,7 +42,7 @@ $columns_def
 
     def build_append_query(self, pipeline: ETLPipeline) -> str:
         columns = ",".join(column.name for column in pipeline.columns)
-        query_template = "INSERT INTO $schema_name.$table_name ($columns) SELECT $columns FROM staging"
+        query_template = "INSERT INTO $schema_name.$table_name ($columns) SELECT $columns FROM staging;"
         return self.build_query(
             query_template, table_name=pipeline.name, schema_name=pipeline.destination_schema, columns=columns
         )
@@ -52,19 +52,36 @@ $columns_def
         query_template = Template(query)
         return query_template.substitute(**kwargs)
 
+    def build_truncate_query(self, pipeline: ETLPipeline) -> str:
+        query_template = "TRUNCATE TABLE $schema_name.$table_name;"
+        return self.build_query(query_template, table_name=pipeline.name, schema_name=pipeline.destination_schema)
+
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
         self.ensure_table_exists(pipeline)
-        self.conn.register("staging", df)
+        truncate_query = self.build_truncate_query(pipeline)
         insert_query = self.build_append_query(pipeline)
-        result = self.conn.execute(insert_query).fetchone()
-        stats = result[0] if result else -1
-        logger.info("Number of Inserted rows: %s", stats)
+        try:
+            self.conn.begin()
+            result = self.conn.execute(truncate_query).fetchone()
+            stats = result[0] if result else -1
+            logger.info("Number of deleted rows: %s", stats)
+
+            self.conn.register("staging", df)
+            result = self.conn.execute(insert_query).fetchone()
+            stats = result[0] if result else -1
+            logger.info("Number of Inserted rows: %s", stats)
+
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            logger.exception("Transaction failed")
 
 
 class StorageSettings(BaseSettings):
     type: str
     access_key_id: str
     secret_access_key: str
+    data_path: str
     endpoint: str | None = None
     region: str | None = None
     url_style: str | None = None
@@ -75,19 +92,30 @@ class StorageSettings(BaseSettings):
         case_sensitive = False
 
 
+class PostgresCatalogSettings(BaseSettings):
+    dbname: str
+    host: str
+    port: str
+    user: str
+    password: str
+
+    class Config:
+        env_prefix = "PG_"
+        case_sensitive = False
+
+
 class DuckLakeConnManager:
     EXTENSIONS: ClassVar[list[str]] = ["ducklake", "postgres"]
     SCHEMAS: ClassVar[list[str]] = ["public"]
 
-    def __init__(self, storage_settings: StorageSettings, pg_config: dict[str, Any], data_path: str) -> None:
+    def __init__(self, storage_settings: StorageSettings, pg_catalog_settings: PostgresCatalogSettings) -> None:
         self._conn = duckdb.connect()
         version = self._conn.execute("SELECT version()").fetchone()
         if version:
             logger.info(f"DuckDB version: {version[0]}")
 
         self._storage_settings = storage_settings
-        self._pg_config = pg_config
-        self._data_path = data_path
+        self._pg_catalog_settings = pg_catalog_settings
 
     def install_and_load_extensions(self) -> None:
         for extension in self.EXTENSIONS:
@@ -115,13 +143,14 @@ class DuckLakeConnManager:
 
     def configure_s3_storage(self) -> None:
         for key, value in self._storage_settings.dict().items():
-            if not (key == "type" or value is None):
+            if not (key in ("type", "data_path") or value is None):
                 self._conn.execute(f"SET s3_{key}='{value}';")
 
     def attach_ducklake_house(self) -> None:
         # Attach DuckLake catalog
-        connection_string = " ".join(f"{key}={value}" for key, value in self._pg_config.items())
-        attach_command = f"ATTACH 'ducklake:postgres:{connection_string}' AS ducklake (DATA_PATH '{self._data_path}');"
+        connection_string = " ".join(f"{key}={value}" for key, value in self._pg_catalog_settings.dict().items())
+        data_path = self._storage_settings.data_path
+        attach_command = f"ATTACH 'ducklake:postgres:{connection_string}' AS ducklake (DATA_PATH '{data_path}');"
         self._conn.execute(attach_command)
         self._conn.execute("USE ducklake")
 

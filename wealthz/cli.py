@@ -1,10 +1,8 @@
-import os
-
 import click as click
 
 from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, StorageSettings
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, PostgresCatalogSettings, StorageSettings
 from wealthz.model import ETLPipeline
 
 
@@ -22,17 +20,8 @@ def run(name: str) -> None:
     factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
     storage_settings = StorageSettings()  # type: ignore[call-arg]
-
-    PG_CATALOG = {
-        "dbname": os.environ["PG_DBNAME"],
-        "host": os.environ["PG_HOST"],
-        "port": os.environ["PG_PORT"],
-        "user": os.environ["PG_USER"],
-        "password": os.environ["PG_PASSWORD"],
-    }
-    DATA_PATH = os.environ["S3_DATA_PATH"]
-
-    manager = DuckLakeConnManager(storage_settings, PG_CATALOG, DATA_PATH)
+    pg_catalog_settings = PostgresCatalogSettings()  # type: ignore[call-arg]
+    manager = DuckLakeConnManager(storage_settings, pg_catalog_settings)
     conn = manager.provision()
     loader = DuckLakeLoader(conn)
 
