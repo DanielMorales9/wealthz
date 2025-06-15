@@ -2,8 +2,9 @@ import click as click
 
 from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, PostgresCatalogSettings, StorageSettings
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
 from wealthz.model import ETLPipeline
+from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
 
 @click.group()

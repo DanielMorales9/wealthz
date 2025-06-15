@@ -6,11 +6,13 @@ from typing import Any, ClassVar, Generic
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
 from polars import DataFrame
-from pydantic.v1 import BaseSettings
 
 from wealthz.generics import T
 from wealthz.logutils import get_logger
-from wealthz.model import ETLPipeline
+from wealthz.model import ETLPipeline, ReplicationType
+from wealthz.settings import PostgresCatalogSettings, StorageSettings
+
+EXT_LOAD_TPL_STMT = "LOAD $extension"
 
 logger = get_logger(__name__)
 
@@ -31,18 +33,18 @@ class QueryBuilder:
 
 
 class DuckLakeLoader(Loader):
-    CREATE_TABLE_TPL_STMT = """CREATE TABLE IF NOT EXISTS $schema_name.$table_name (
-    $columns_def
-);"""
+    CREATE_TABLE_TPL_STMT = """CREATE TABLE IF NOT EXISTS $schema_name.$table_name ($columns_def);"""
     INSERT_TPL_STMT = "INSERT INTO $schema_name.$table_name ($columns) SELECT $columns FROM staging;"
     TRUNCATE_TPL_STMT = "TRUNCATE TABLE $schema_name.$table_name;"
+    DELETE_TPL_STMT = """DELETE FROM $schema_name.$table_name
+WHERE ($primary_keys) IN (SELECT $primary_keys FROM staging);"""
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
 
     def ensure_table_exists(self, pipeline: ETLPipeline) -> None:
-        columns_def = ",\n".join(
-            f"\t{column.name} {DUCKDB_TYPES_MAP.get(column.type, column.type).upper()}" for column in pipeline.columns
+        columns_def = ",".join(
+            f"\n\t{column.name} {DUCKDB_TYPES_MAP.get(column.type, column.type).upper()}" for column in pipeline.columns
         )
 
         query = QueryBuilder.build(
@@ -52,77 +54,92 @@ class DuckLakeLoader(Loader):
             columns_def=columns_def,
         )
         logger.info(query)
-        self.conn.execute(query)
+        result = self.conn.execute(query).fetchone()
+        stats = result[0] if result else -1
+        logger.info("Create table result: %s", stats)
 
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
         self.ensure_table_exists(pipeline)
-        truncate_query = QueryBuilder.build(
-            self.TRUNCATE_TPL_STMT, table_name=pipeline.name, schema_name=pipeline.destination_schema
-        )
-        insert_query = QueryBuilder.build(
-            self.INSERT_TPL_STMT,
-            table_name=pipeline.name,
-            schema_name=pipeline.destination_schema,
-            columns=",".join(pipeline.column_names),
-        )
         try:
             self.conn.begin()
-            result = self.conn.execute(truncate_query).fetchone()
-            stats = result[0] if result else -1
-            logger.info("Number of deleted rows: %s", stats)
 
-            self.conn.register("staging", df)
-            result = self.conn.execute(insert_query).fetchone()
-            stats = result[0] if result else -1
-            logger.info("Number of Inserted rows: %s", stats)
+            match pipeline.replication:
+                case ReplicationType.FULL:
+                    self.execute_full_snapshot(df, pipeline)
+                case ReplicationType.APPEND:
+                    self.execute_append(df, pipeline)
+                case ReplicationType.INCREMENTAL:
+                    self.execute_incremental(df, pipeline)
 
             self.conn.commit()
         except Exception:
             self.conn.rollback()
             logger.exception("Transaction failed")
 
+    def execute_append(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        insert_stmt = QueryBuilder.build(
+            self.INSERT_TPL_STMT,
+            table_name=pipeline.name,
+            schema_name=pipeline.destination_schema,
+            columns=",".join(pipeline.column_names),
+        )
+        logger.info(insert_stmt)
+        self.conn.register("staging", df)
+        result = self.conn.execute(insert_stmt).fetchone()
+        stats = result[0] if result else -1
+        logger.info("Number of inserted rows: %s", stats)
 
-class StorageSettings(BaseSettings):
-    type: str
-    access_key_id: str
-    secret_access_key: str
-    data_path: str
-    endpoint: str | None = None
-    region: str | None = None
-    url_style: str | None = None
-    use_ssl: bool | None = None
+    def execute_full_snapshot(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        self.execute_truncate(pipeline)
+        self.execute_append(df, pipeline)
 
-    class Config:
-        env_prefix = "STORAGE_"
-        case_sensitive = False
+    def execute_truncate(self, pipeline: ETLPipeline) -> None:
+        truncate_stmt = QueryBuilder.build(
+            self.TRUNCATE_TPL_STMT, table_name=pipeline.name, schema_name=pipeline.destination_schema
+        )
+        logger.info(truncate_stmt)
+        result = self.conn.execute(truncate_stmt).fetchone()
+        stats = result[0] if result else -1
+        logger.info("Number of deleted rows: %s", stats)
 
+    def execute_incremental(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        self.conn.register("staging", df)
 
-class PostgresCatalogSettings(BaseSettings):
-    dbname: str
-    host: str
-    port: str
-    user: str
-    password: str
+        delete_stmt = QueryBuilder.build(
+            self.DELETE_TPL_STMT,
+            table_name=pipeline.name,
+            schema_name=pipeline.destination_schema,
+            columns=", ".join(pipeline.column_names),
+            primary_keys=", ".join(pipeline.primary_keys),
+        )
+        logger.info(delete_stmt)
+        result = self.conn.execute(delete_stmt).fetchone()
+        num_updates = result[0] if result else -1
+        logger.info("Number of updated rows: %s", num_updates)
 
-    class Config:
-        env_prefix = "PG_"
-        case_sensitive = False
-
-    @property
-    def connection(self) -> str:
-        return " ".join(f"{key}={value}" for key, value in self.dict().items())
+        insert_stmt = QueryBuilder.build(
+            self.INSERT_TPL_STMT,
+            table_name=pipeline.name,
+            schema_name=pipeline.destination_schema,
+            columns=", ".join(pipeline.column_names),
+        )
+        logger.info(insert_stmt)
+        result = self.conn.execute(insert_stmt).fetchone()
+        num_inserts = result[0] if result else -1
+        logger.info("Number of inserted rows: %s", num_inserts - num_updates)
 
 
 class DuckLakeConnManager:
     EXTENSIONS: ClassVar[list[str]] = ["ducklake", "postgres"]
     SCHEMAS: ClassVar[list[str]] = ["public"]
 
+    EXT_INSTALL_TPL_STMT = "INSTALL $extension"
+    EXT_LOAD_TPL_STMT = "LOAD $extension"
     CREATE_SECRET_TPL_STMT = """CREATE OR REPLACE SECRET gcs_secret (
     TYPE gcs,
     KEY_ID '$access_key_id',
     SECRET '$secret_access_key'
 )"""  # noqa: S105
-
     ATTACH_TPL_STMT = "ATTACH 'ducklake:postgres:$connection' AS ducklake (DATA_PATH '$data_path');"
     CREATE_SCHEMA_TPL_STMT = "CREATE SCHEMA IF NOT EXISTS $schema"
 
@@ -137,10 +154,10 @@ class DuckLakeConnManager:
 
     def install_and_load_extensions(self) -> None:
         for extension in self.EXTENSIONS:
-            extension_stmt = QueryBuilder.build("INSTALL $extension", extension=extension)
-            load_stmt = QueryBuilder.build("LOAD $extension", extension=extension)
-            self._conn.execute(extension_stmt)
-            self._conn.execute(load_stmt)
+            ext_install_stmt = QueryBuilder.build(self.EXT_INSTALL_TPL_STMT, extension=extension)
+            ext_load_stmt = QueryBuilder.build(self.EXT_LOAD_TPL_STMT, extension=extension)
+            self._conn.execute(ext_install_stmt)
+            self._conn.execute(ext_load_stmt)
 
     def configure_storage(self) -> None:
         # Configure DuckDB to use remote storage

@@ -1,4 +1,5 @@
 import time
+from copy import copy
 from unittest.mock import MagicMock
 
 import polars as pl
@@ -9,8 +10,9 @@ from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
 from tests.conftest import GSHEET_ETL_PIPELINE
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, PostgresCatalogSettings, StorageSettings
-from wealthz.model import ETLPipeline
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
+from wealthz.model import ETLPipeline, ReplicationType
+from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
 
 def test_when_loading_into_ducklake_then_succeeds():
@@ -61,10 +63,13 @@ TEST_PEOPLE_PIPELINE = ETLPipeline(
         "sheet_range": "test-sheet-range",
         "credentials_file": "mock-creds.json",
     },
+    primary_keys=["id"],
+    replication="full",
 )
 
 
-def test_ducklake_with_minio_and_postgres(postgres_container):
+@pytest.mark.parametrize("replication", list(ReplicationType))
+def test_ducklake_with_minio_and_postgres(postgres_container, replication):
     # Start Postgres
     with MinioContainer() as minio:
         # Setup DuckDB connection
@@ -96,7 +101,10 @@ def test_ducklake_with_minio_and_postgres(postgres_container):
         # Create table and insert test data
         df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
         # Register the dataframe as a DuckDB view
-        DuckLakeLoader(conn).load(df, TEST_PEOPLE_PIPELINE)
+        pipeline = copy(TEST_PEOPLE_PIPELINE)
+        pipeline.replication = replication
+        assert pipeline.replication == replication
+        DuckLakeLoader(conn).load(df, pipeline)
 
         # Query back the data
         result = conn.execute("SELECT * FROM public.people").pl()

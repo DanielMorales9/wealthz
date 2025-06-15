@@ -24,4 +24,6 @@ GSHEET_ETL_PIPELINE = ETLPipeline(
         "sheet_range": "test-sheet-range",
         "credentials_file": "mock-creds.json",
     },
+    primary_keys=["column1"],
+    replication="full",
 )

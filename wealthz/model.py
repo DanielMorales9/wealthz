@@ -26,10 +26,18 @@ class Column(BaseConfig):
     type: ColumnType
 
 
+class ReplicationType(StrEnum):
+    APPEND = "append"
+    FULL = "full"
+    INCREMENTAL = "incremental"
+
+
 class Table(BaseConfig):
     destination_schema: str = Field(..., alias="schema")
     name: str
     columns: list[Column]
+    replication: ReplicationType
+    primary_keys: list[str]
 
     @cached_property
     def column_names(self) -> list[str]:
