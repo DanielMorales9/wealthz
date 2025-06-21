@@ -5,8 +5,8 @@ install: ## Install the poetry environment and install the pre-commit hooks
 	@ poetry run pre-commit install
 	@poetry shell
 
-.PHONY: check
-check: ## Run code quality tools.
+.PHONY: verify
+verify: ## Run code quality tools.
 	@echo "🚀 Checking Poetry lock file consistency with 'pyproject.toml': Running poetry check --lock"
 	@poetry check --lock
 	@echo "🚀 Linting code: Running pre-commit"

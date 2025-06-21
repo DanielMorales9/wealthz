@@ -1,16 +1,24 @@
 import time
 from copy import copy
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import polars as pl
 import psycopg2
 import pytest
+from conftest import GSHEET_ETL_PIPELINE
 from duckdb.duckdb import DuckDBPyConnection
 from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
-from tests.conftest import GSHEET_ETL_PIPELINE
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
+from wealthz.loaders import (
+    DuckLakeConnManager,
+    DuckLakeFullReplicationStrategy,
+    DuckLakeIncrementalReplicationStrategy,
+    DuckLakeLoader,
+    DuckLakeSchemaSyncer,
+    UnknownReplicationStrategy,
+    query_build,
+)
 from wealthz.model import ETLPipeline, ReplicationType
 from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
@@ -19,7 +27,7 @@ def test_when_loading_into_ducklake_then_succeeds():
     mock_conn = MagicMock(spec=DuckDBPyConnection)
     loader = DuckLakeLoader(mock_conn)
     df = pl.DataFrame({"id": [4, 5], "name": ["David", "Eve"]})
-    loader.load(df, GSHEET_ETL_PIPELINE)
+    loader.load(df, ETLPipeline(**GSHEET_ETL_PIPELINE))
     mock_conn.register.called_once_with("staging", df)
     mock_conn.execute.called_once_with("INSERT INTO public.people SELECT * FROM staging")
 
@@ -113,3 +121,178 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
         assert result.shape == (2, 2)
 
         assert result.sort("id")["name"].to_list() == ["Alice", "Bob"]
+
+
+def test_query_build():
+    template = "SELECT * FROM $table WHERE id = $id"
+    result = query_build(template, table="users", id=123)
+    assert result == "SELECT * FROM users WHERE id = 123"
+
+
+def test_replication_strategy_pass():
+    """Test abstract method implementation requirement"""
+    from wealthz.loaders import ReplicationStrategy
+
+    class TestStrategy(ReplicationStrategy):
+        def replicate(self, pipeline):
+            pass
+
+    strategy = TestStrategy()
+    strategy.replicate(TEST_PEOPLE_PIPELINE)
+
+
+def test_duck_lake_schema_syncer_extract_duck_type():
+    """Test type mapping in DuckLakeSchemaSyncer"""
+    mock_conn = MagicMock()
+    syncer = DuckLakeSchemaSyncer(mock_conn)
+
+    from wealthz.model import Column
+
+    string_col = Column(name="test", type="string")
+    int_col = Column(name="test", type="integer")
+
+    assert syncer.extract_duck_type(string_col) == "varchar"
+    assert syncer.extract_duck_type(int_col) == "integer"
+
+
+def test_duck_lake_base_replication_execute_delete_where():
+    """Test delete operation in replication"""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = [5]
+
+    strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
+    strategy.execute_delete_where(TEST_PEOPLE_PIPELINE)
+
+    mock_conn.execute.assert_called()
+
+
+def test_duck_lake_base_replication_execute_truncate():
+    """Test truncate operation in replication"""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = [10]
+
+    strategy = DuckLakeFullReplicationStrategy(mock_conn, "staging")
+    strategy.execute_truncate(TEST_PEOPLE_PIPELINE)
+
+    mock_conn.execute.assert_called()
+
+
+def test_duck_lake_incremental_replication_strategy():
+    """Test incremental replication strategy"""
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = [3]
+
+    strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
+    strategy.replicate(TEST_PEOPLE_PIPELINE)
+
+    # Should call both delete and insert
+    assert mock_conn.execute.call_count >= 2
+
+
+def test_unknown_replication_strategy_exception():
+    """Test UnknownReplicationStrategy exception"""
+    invalid_replication = "invalid_type"
+    exception = UnknownReplicationStrategy(invalid_replication)
+    assert str(exception) == f"Unknown replication strategy: {invalid_replication}"
+
+
+def test_duck_lake_loader_transaction_rollback():
+    """Test transaction rollback on exception"""
+    mock_conn = MagicMock()
+    mock_conn.register.side_effect = Exception("Database error")
+
+    loader = DuckLakeLoader(mock_conn)
+    df = pl.DataFrame({"id": [1], "name": ["test"]})
+
+    loader.load(df, TEST_PEOPLE_PIPELINE)
+
+    mock_conn.begin.assert_called_once()
+    mock_conn.rollback.assert_called_once()
+
+
+def test_duck_lake_loader_unknown_replication_type():
+    """Test unknown replication type handling"""
+    mock_conn = MagicMock()
+    loader = DuckLakeLoader(mock_conn)
+
+    # Create pipeline with invalid replication type
+    invalid_pipeline = copy(TEST_PEOPLE_PIPELINE)
+    invalid_pipeline.replication = "unknown"
+
+    with pytest.raises(UnknownReplicationStrategy):
+        loader.get_replication_strategy(invalid_pipeline)
+
+
+def test_duck_lake_conn_manager_configure_gcs_storage():
+    """Test GCS storage configuration"""
+    storage_settings = StorageSettings(
+        type="gcs",
+        access_key_id="test_key",
+        secret_access_key="test_secret",  # noqa: S106
+        data_path="gcs://test-bucket/data",
+    )
+    pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
+
+    with patch("duckdb.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
+
+        manager = DuckLakeConnManager(storage_settings, pg_settings)
+        manager.configure_gcs_storage()
+
+        mock_conn.execute.assert_called()
+
+
+def test_duck_lake_conn_manager_configure_s3_storage():
+    """Test S3 storage configuration"""
+    storage_settings = StorageSettings(
+        type="s3",
+        region="us-east-1",
+        access_key_id="test_key",
+        secret_access_key="test_secret",  # noqa: S106
+        endpoint="http://localhost:9000",
+        data_path="s3://test-bucket/data",
+    )
+    pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
+
+    with patch("duckdb.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
+
+        manager = DuckLakeConnManager(storage_settings, pg_settings)
+        manager.configure_s3_storage()
+
+        # Should call execute for each non-None setting
+        assert mock_conn.execute.call_count >= 1
+
+
+def test_duck_lake_conn_manager_unsupported_storage_type():
+    """Test unsupported storage type"""
+    storage_settings = StorageSettings(
+        type="azure",  # Unsupported type
+        access_key_id="test_key",
+        secret_access_key="test_secret",  # noqa: S106
+        data_path="azure://test",
+    )
+    pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
+
+    with patch("duckdb.connect") as mock_connect:
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
+
+        manager = DuckLakeConnManager(storage_settings, pg_settings)
+
+        with pytest.raises(NotImplementedError):
+            manager.configure_storage()
+
+
+def test_replication_strategy_abstract_method():
+    """Test that ReplicationStrategy is abstract"""
+    from wealthz.loaders import ReplicationStrategy
+
+    # This should raise TypeError since replicate is not implemented
+    with pytest.raises(TypeError):
+        ReplicationStrategy()

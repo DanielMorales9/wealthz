@@ -9,7 +9,7 @@ from polars import DataFrame
 
 from wealthz.generics import T
 from wealthz.logutils import get_logger
-from wealthz.model import BaseConfig, ETLPipeline, ReplicationType
+from wealthz.model import BaseConfig, Column, ETLPipeline, ReplicationType
 from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
 logger = get_logger(__name__)
@@ -20,7 +20,10 @@ class Loader(ABC, Generic[T]):
     def load(self, df: DataFrame, pipeline: ETLPipeline) -> None: ...
 
 
-DUCKDB_TYPES_MAP = {"string": "varchar"}
+class ReplicationStrategy(ABC):
+    @abc.abstractmethod
+    def replicate(self, pipeline: ETLPipeline) -> None:
+        pass
 
 
 def query_build(template: str, **kwargs: Any) -> str:
@@ -30,14 +33,17 @@ def query_build(template: str, **kwargs: Any) -> str:
 
 class DuckLakeSchemaSyncer:
     CREATE_TABLE_TPL_STMT = """CREATE TABLE IF NOT EXISTS $table_name ($columns_def);"""
+    DUCKDB_TYPES_MAP: ClassVar[dict[str, str]] = {"string": "varchar"}
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
 
+    def extract_duck_type(self, column: Column) -> str:
+        return self.DUCKDB_TYPES_MAP.get(column.type, column.type)
+
     def sync(self, pipeline: ETLPipeline) -> None:
-        columns_def = ",".join(
-            f"\n\t{column.name} {DUCKDB_TYPES_MAP.get(column.type, column.type).upper()}" for column in pipeline.columns
-        )
+        duck_columns = ((column.name, self.extract_duck_type(column)) for column in pipeline.columns)
+        columns_def = ",".join(f"\n\t{name} {duck_type.upper()}" for name, duck_type in duck_columns)
 
         query = query_build(
             self.CREATE_TABLE_TPL_STMT,
@@ -50,50 +56,28 @@ class DuckLakeSchemaSyncer:
         logger.info("Create table result: %s", stats)
 
 
-class DuckLakeLoader(Loader):
+class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
     INSERT_TPL_STMT = "INSERT INTO $table_name ($columns) SELECT $columns FROM $staging_table_name;"
     TRUNCATE_TPL_STMT = "TRUNCATE TABLE $table_name;"
-    DELETE_TPL_STMT = """DELETE FROM $table_name
-WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
+    DELETE_TPL_STMT = """DELETE \
+                         FROM $table_name
+                         WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
 
-    STAGING_TABLE_NAME = "staging"
-
-    def __init__(self, conn: duckdb.DuckDBPyConnection):
+    def __init__(self, conn: duckdb.DuckDBPyConnection, staging_table_name: str):
         self.conn = conn
+        self.staging_table_name = staging_table_name
 
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
-        try:
-            self.conn.begin()
-            self.conn.register(self.STAGING_TABLE_NAME, df)
-
-            match pipeline.replication:
-                case ReplicationType.FULL:
-                    self.execute_full_snapshot(pipeline)
-                case ReplicationType.APPEND:
-                    self.execute_append(pipeline)
-                case ReplicationType.INCREMENTAL:
-                    self.execute_incremental(pipeline)
-
-            self.conn.commit()
-        except Exception:
-            self.conn.rollback()
-            logger.exception("Transaction failed")
-
-    def execute_append(self, pipeline: ETLPipeline) -> None:
+    def execute_insert_into(self, pipeline: ETLPipeline) -> None:
         insert_stmt = query_build(
             self.INSERT_TPL_STMT,
             table_name=pipeline.name,
             columns=",".join(pipeline.column_names),
-            staging_table_name=self.STAGING_TABLE_NAME,
+            staging_table_name=self.staging_table_name,
         )
         logger.info(insert_stmt)
         result = self.conn.execute(insert_stmt).fetchone()
         stats = result[0] if result else -1
         logger.info("Number of inserted rows: %s", stats)
-
-    def execute_full_snapshot(self, pipeline: ETLPipeline) -> None:
-        self.execute_truncate(pipeline)
-        self.execute_append(pipeline)
 
     def execute_truncate(self, pipeline: ETLPipeline) -> None:
         truncate_stmt = query_build(
@@ -105,22 +89,69 @@ WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
         stats = result[0] if result else -1
         logger.info("Number of deleted rows: %s", stats)
 
-    def execute_incremental(self, pipeline: ETLPipeline) -> None:
-        self.execute_delete(pipeline)
-        self.execute_append(pipeline)
-
-    def execute_delete(self, pipeline: ETLPipeline) -> None:
+    def execute_delete_where(self, pipeline: ETLPipeline) -> None:
         delete_stmt = query_build(
             self.DELETE_TPL_STMT,
             table_name=pipeline.name,
             columns=", ".join(pipeline.column_names),
             primary_keys=", ".join(pipeline.primary_keys),
-            staging_table_name=self.STAGING_TABLE_NAME,
+            staging_table_name=self.staging_table_name,
         )
         logger.info(delete_stmt)
         result = self.conn.execute(delete_stmt).fetchone()
         num_deletes = result[0] if result else -1
         logger.info("Number of deleted rows: %s", num_deletes)
+
+
+class DuckLakeAppendReplicationStrategy(DuckLakeBaseReplicationStrategy):
+    def replicate(self, pipeline: ETLPipeline) -> None:
+        self.execute_insert_into(pipeline)
+
+
+class DuckLakeFullReplicationStrategy(DuckLakeBaseReplicationStrategy):
+    def replicate(self, pipeline: ETLPipeline) -> None:
+        self.execute_truncate(pipeline)
+        self.execute_insert_into(pipeline)
+
+
+class DuckLakeIncrementalReplicationStrategy(DuckLakeBaseReplicationStrategy):
+    def replicate(self, pipeline: ETLPipeline) -> None:
+        self.execute_delete_where(pipeline)
+        self.execute_insert_into(pipeline)
+
+
+class UnknownReplicationStrategy(ValueError):
+    def __init__(self, replication_type: ReplicationType):
+        super().__init__(f"Unknown replication strategy: {replication_type}")
+
+
+class DuckLakeLoader(Loader):
+    STAGING_TABLE_NAME = "staging"
+    REPLICATION_STRATEGY_MAP: ClassVar[dict[ReplicationType, type[DuckLakeBaseReplicationStrategy]]] = {
+        ReplicationType.FULL: DuckLakeFullReplicationStrategy,
+        ReplicationType.APPEND: DuckLakeAppendReplicationStrategy,
+        ReplicationType.INCREMENTAL: DuckLakeAppendReplicationStrategy,
+    }
+
+    def __init__(self, conn: duckdb.DuckDBPyConnection):
+        self.conn = conn
+
+    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        try:
+            self.conn.begin()
+            self.conn.register(self.STAGING_TABLE_NAME, df)
+            strategy = self.get_replication_strategy(pipeline)
+            strategy.replicate(pipeline=pipeline)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            logger.exception("Transaction failed")
+
+    def get_replication_strategy(self, pipeline: ETLPipeline) -> DuckLakeBaseReplicationStrategy:
+        strategy_class = self.REPLICATION_STRATEGY_MAP.get(pipeline.replication)
+        if strategy_class is None:
+            raise UnknownReplicationStrategy(pipeline.replication)
+        return strategy_class(self.conn, self.STAGING_TABLE_NAME)
 
 
 class DuckDBExtension(BaseConfig):

@@ -7,6 +7,7 @@ from google.auth.credentials import Credentials
 from polars import DataFrame
 
 from wealthz.fetchers import GoogleSheetFetcher
+from wealthz.model import ETLPipeline
 
 
 @pytest.fixture()
@@ -21,7 +22,7 @@ def mock_gsheet():
     "pipeline, data, expected",
     [
         (
-            GSHEET_ETL_PIPELINE,
+            ETLPipeline(**GSHEET_ETL_PIPELINE),
             {
                 "values": [["column1", "column2"], ["value1", 123], ["value2", 456]],
             },
