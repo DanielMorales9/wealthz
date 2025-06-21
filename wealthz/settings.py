@@ -9,7 +9,6 @@ class PostgresCatalogSettings(BaseSettings):
     password: str
 
     class Config:
-        env_prefix = "PG_"
         case_sensitive = False
 
     @property
@@ -28,5 +27,15 @@ class StorageSettings(BaseSettings):
     use_ssl: bool | None = None
 
     class Config:
-        env_prefix = "STORAGE_"
         case_sensitive = False
+
+
+class DuckLakeSettings(BaseSettings):
+    setup_path: str | None = None
+    storage: StorageSettings
+    pg: PostgresCatalogSettings
+
+    class Config:
+        env_prefix = "DUCKLAKE_"
+        case_sensitive = False
+        env_nested_delimiter = "__"

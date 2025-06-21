@@ -1,7 +1,9 @@
 import abc
 from abc import ABC
+from io import TextIOWrapper
 from string import Template
-from typing import Any, ClassVar, Generic
+from types import TracebackType
+from typing import Any, ClassVar, Generic, Optional
 
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
@@ -10,7 +12,7 @@ from polars import DataFrame
 from wealthz.generics import T
 from wealthz.logutils import get_logger
 from wealthz.model import BaseConfig, Column, ETLPipeline, ReplicationType
-from wealthz.settings import PostgresCatalogSettings, StorageSettings
+from wealthz.settings import DuckLakeSettings
 
 logger = get_logger(__name__)
 
@@ -165,68 +167,100 @@ class DuckLakeConnManager:
         DuckDBExtension(name="postgres", source="core"),
     ]
 
-    EXT_INSTALL_TPL_STMT = "INSTALL $extension FROM $source"
-    EXT_LOAD_TPL_STMT = "LOAD $extension"
+    EXT_INSTALL_TPL_STMT = "INSTALL $extension FROM $source;"
+    EXT_LOAD_TPL_STMT = "LOAD $extension;"
     CREATE_SECRET_TPL_STMT = """CREATE OR REPLACE SECRET gcs_secret (
     TYPE gcs,
     KEY_ID '$access_key_id',
     SECRET '$secret_access_key'
-)"""  # noqa: S105
+);"""  # noqa: S105
     ATTACH_TPL_STMT = "ATTACH 'ducklake:postgres:$connection' AS ducklake (DATA_PATH '$data_path');"
 
-    def __init__(self, storage_settings: StorageSettings, pg_catalog_settings: PostgresCatalogSettings) -> None:
+    def __init__(
+        self,
+        settings: DuckLakeSettings,
+    ) -> None:
+        self.settings = settings
+        self._pg_catalog_settings = settings.pg
+        self._setup_file: TextIOWrapper | None = None
         self._conn = duckdb.connect()
+        self._log_version()
+
+    def _log_version(self) -> None:
         version = self._conn.execute("SELECT version()").fetchone()
         if version:
             logger.info(f"DuckDB version: {version[0]}")
-
-        self._storage_settings = storage_settings
-        self._pg_catalog_settings = pg_catalog_settings
 
     def install_extensions(self) -> None:
         for ext in self.EXTENSIONS:
             ext_install_stmt = query_build(self.EXT_INSTALL_TPL_STMT, extension=ext.name, source=ext.source)
             ext_load_stmt = query_build(self.EXT_LOAD_TPL_STMT, extension=ext.name, source=ext.source)
-            self._conn.execute(ext_install_stmt)
-            self._conn.execute(ext_load_stmt)
+
+            self._execute(ext_install_stmt)
+            self._execute(ext_load_stmt)
 
     # noinspection PyUnreachableCode
     def configure_storage(self) -> None:
         # Configure DuckDB to use remote storage
-        match self._storage_settings.type:
-            case "s3":
-                self.configure_s3_storage()
-            case "gcs":
-                self.configure_gcs_storage()
-            case _:
-                raise NotImplementedError
+        STORAGE_SETUP_MAP = {
+            "s3": self.configure_s3_storage,
+            "gcs": self.configure_gcs_storage,
+        }
+        configure_fun = STORAGE_SETUP_MAP.get(self.settings.storage.type)
+        if configure_fun is None:
+            raise NotImplementedError
+        configure_fun()
 
     def configure_gcs_storage(self) -> None:
         create_secret_stmt = query_build(
             self.CREATE_SECRET_TPL_STMT,
-            access_key_id=self._storage_settings.access_key_id,
-            secret_access_key=self._storage_settings.secret_access_key,
+            access_key_id=self.settings.storage.access_key_id,
+            secret_access_key=self.settings.storage.secret_access_key,
         )
-        self._conn.execute(create_secret_stmt)
+        self._execute(create_secret_stmt)
 
     def configure_s3_storage(self) -> None:
-        for key, value in self._storage_settings.dict().items():
+        for key, value in self.settings.storage.dict().items():
             if not (key in ("type", "data_path") or value is None):
                 set_stmt = query_build("SET s3_$key='$value';", key=key, value=value)
-                self._conn.execute(set_stmt)
+                self._execute(set_stmt)
 
-    def setup_catalog(self) -> None:
+    def configure_catalog(self) -> None:
         # Attach DuckLake catalog
         attach_stmt = query_build(
             self.ATTACH_TPL_STMT,
-            connection=self._pg_catalog_settings.connection,
-            data_path=self._storage_settings.data_path,
+            connection=self.settings.pg.connection,
+            data_path=self.settings.storage.data_path,
         )
-        self._conn.execute(attach_stmt)
-        self._conn.execute("USE ducklake")
+        self._execute(attach_stmt)
+        self._execute("USE ducklake;")
+
+    def __enter__(self) -> "DuckLakeConnManager":
+        if self.settings.setup_path is None:
+            return self
+
+        self._setup_file = open(self.settings.setup_path, "w")
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_inst: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        if self._setup_file:
+            self._setup_file.close()
+        return True
+
+    def _execute(self, stmt: str) -> None:
+        if self._setup_file:
+            self._setup_file.write(f"{stmt}\n")
+
+        self._conn.execute(stmt)
 
     def provision(self) -> DuckDBPyConnection:  # type: ignore[no-any-unimported]
-        self.install_extensions()
-        self.configure_storage()
-        self.setup_catalog()
-        return self._conn
+        with self:
+            self.install_extensions()
+            self.configure_storage()
+            self.configure_catalog()
+            return self._conn

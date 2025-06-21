@@ -20,7 +20,7 @@ from wealthz.loaders import (
     query_build,
 )
 from wealthz.model import ETLPipeline, ReplicationType
-from wealthz.settings import PostgresCatalogSettings, StorageSettings
+from wealthz.settings import DuckLakeSettings, PostgresCatalogSettings, StorageSettings
 
 
 def test_when_loading_into_ducklake_then_succeeds():
@@ -101,8 +101,8 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
             user=postgres_container.username,
             password=postgres_container.password,
         )
-
-        manager = DuckLakeConnManager(storage_settings, pg_config)
+        settings = DuckLakeSettings(storage=storage_settings, pg=pg_config)
+        manager = DuckLakeConnManager(settings)
         conn = manager.provision()
         syncer = DuckLakeSchemaSyncer(conn)
         syncer.sync(TEST_PEOPLE_PIPELINE)
@@ -232,13 +232,13 @@ def test_duck_lake_conn_manager_configure_gcs_storage():
         data_path="gcs://test-bucket/data",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
-
+    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
         mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
 
-        manager = DuckLakeConnManager(storage_settings, pg_settings)
+        manager = DuckLakeConnManager(settings)
         manager.configure_gcs_storage()
 
         mock_conn.execute.assert_called()
@@ -255,13 +255,14 @@ def test_duck_lake_conn_manager_configure_s3_storage():
         data_path="s3://test-bucket/data",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
+    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
 
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
         mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
 
-        manager = DuckLakeConnManager(storage_settings, pg_settings)
+        manager = DuckLakeConnManager(settings)
         manager.configure_s3_storage()
 
         # Should call execute for each non-None setting
@@ -277,13 +278,14 @@ def test_duck_lake_conn_manager_unsupported_storage_type():
         data_path="azure://test",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
+    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
 
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
         mock_conn.execute.return_value.fetchone.return_value = ["DuckDB v1.0"]
 
-        manager = DuckLakeConnManager(storage_settings, pg_settings)
+        manager = DuckLakeConnManager(settings)
 
         with pytest.raises(NotImplementedError):
             manager.configure_storage()

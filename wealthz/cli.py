@@ -4,7 +4,7 @@ from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
 from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
 from wealthz.model import ETLPipeline
-from wealthz.settings import PostgresCatalogSettings, StorageSettings
+from wealthz.settings import DuckLakeSettings
 
 
 @click.group()
@@ -20,9 +20,8 @@ def run(name: str) -> None:
 
     factory = GoogleSheetFetcherFactory(pipeline)
     fetcher = factory.create()
-    storage_settings = StorageSettings()  # type: ignore[call-arg]
-    pg_catalog_settings = PostgresCatalogSettings()  # type: ignore[call-arg]
-    manager = DuckLakeConnManager(storage_settings, pg_catalog_settings)
+    settings = DuckLakeSettings()  # type: ignore[call-arg]
+    manager = DuckLakeConnManager(settings)
     conn = manager.provision()
     syncer = DuckLakeSchemaSyncer(conn)
     syncer.sync(pipeline)
