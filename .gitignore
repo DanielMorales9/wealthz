@@ -171,5 +171,3 @@ cython_debug/
 # secrets
 secrets/
 config/*.yaml
-config/*.yml
-dwh/*

@@ -2,7 +2,7 @@ import click as click
 
 from wealthz.constants import CONFIG_DIR
 from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
 from wealthz.model import ETLPipeline
 from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
@@ -24,6 +24,8 @@ def run(name: str) -> None:
     pg_catalog_settings = PostgresCatalogSettings()  # type: ignore[call-arg]
     manager = DuckLakeConnManager(storage_settings, pg_catalog_settings)
     conn = manager.provision()
+    syncer = DuckLakeSchemaSyncer(conn)
+    syncer.sync(pipeline)
     loader = DuckLakeLoader(conn)
 
     df = fetcher.fetch()

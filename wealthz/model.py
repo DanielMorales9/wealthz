@@ -33,7 +33,6 @@ class ReplicationType(StrEnum):
 
 
 class Table(BaseConfig):
-    destination_schema: str = Field(..., alias="schema")
     name: str
     columns: list[Column]
     replication: ReplicationType

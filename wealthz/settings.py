@@ -4,7 +4,7 @@ from pydantic.v1 import BaseSettings
 class PostgresCatalogSettings(BaseSettings):
     dbname: str
     host: str
-    port: str
+    port: int
     user: str
     password: str
 

@@ -10,7 +10,7 @@ from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
 from tests.conftest import GSHEET_ETL_PIPELINE
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader
+from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
 from wealthz.model import ETLPipeline, ReplicationType
 from wealthz.settings import PostgresCatalogSettings, StorageSettings
 
@@ -51,7 +51,6 @@ def postgres_container():
 
 TEST_PEOPLE_PIPELINE = ETLPipeline(
     engine={"type": "duckdb"},
-    schema="public",
     name="people",
     columns=[
         {"name": "id", "type": "integer"},
@@ -97,6 +96,8 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
 
         manager = DuckLakeConnManager(storage_settings, pg_config)
         conn = manager.provision()
+        syncer = DuckLakeSchemaSyncer(conn)
+        syncer.sync(TEST_PEOPLE_PIPELINE)
 
         # Create table and insert test data
         df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
@@ -107,7 +108,7 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
         DuckLakeLoader(conn).load(df, pipeline)
 
         # Query back the data
-        result = conn.execute("SELECT * FROM public.people").pl()
+        result = conn.execute("SELECT * FROM people").pl()
 
         assert result.shape == (2, 2)
 
