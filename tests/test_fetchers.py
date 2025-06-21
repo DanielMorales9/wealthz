@@ -42,8 +42,8 @@ def mock_gsheet():
 def test_google_sheet_fetcher(pipeline, data, expected, mock_gsheet):
     mock_gsheet.values.return_value.get.return_value.execute.return_value = data
     mock_credentials = MagicMock(spec=Credentials)
-    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
-    actual = fetcher.fetch()
+    fetcher = GoogleSheetFetcher(mock_credentials)
+    actual = fetcher.fetch(pipeline)
     assert not actual.is_empty()
     assert actual.equals(expected)
 
@@ -57,9 +57,9 @@ def test_google_sheet_fetcher_returns_only_string_columns(mock_gsheet):
 
     mock_gsheet.values.return_value.get.return_value.execute.return_value = data
     mock_credentials = MagicMock(spec=Credentials)
-    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
+    fetcher = GoogleSheetFetcher(mock_credentials)
 
-    df = fetcher.fetch()
+    df = fetcher.fetch(pipeline)
 
     # Verify all columns are strings
     for column_name in df.columns:

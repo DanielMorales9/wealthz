@@ -27,5 +27,5 @@ def run(name: str) -> None:
     syncer.sync(pipeline)
     loader = DuckLakeLoader(conn)
 
-    df = fetcher.fetch()
+    df = fetcher.fetch(pipeline)
     loader.load(df, pipeline)
