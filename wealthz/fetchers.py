@@ -44,8 +44,8 @@ class GoogleSheetFetcher(Fetcher):
         # First row as header
         rows = values[1:]
 
-        # Create Polars DataFrame
-        schema = {col.name: POLARS_SCHEMA_OVERRIDE[col.type] for col in self._pipeline.columns}
+        # Create Polars DataFrame with all columns as strings
+        schema = {col.name: polars.String for col in self._pipeline.columns}
         df = DataFrame(rows, schema=schema, orient="row", infer_schema_length=0)
 
         return df

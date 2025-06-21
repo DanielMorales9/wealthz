@@ -24,7 +24,7 @@ def mock_gsheet():
         (
             ETLPipeline(**GSHEET_ETL_PIPELINE),
             {
-                "values": [["column1", "column2"], ["value1", 123], ["value2", 456]],
+                "values": [["column1", "column2"], ["value1", "123"], ["value2", "456"]],
             },
             DataFrame(
                 {
@@ -32,9 +32,9 @@ def mock_gsheet():
                         "value1",
                         "value2",
                     ],
-                    "column2": [123, 456],
+                    "column2": ["123", "456"],
                 },
-                schema={"column1": polars.String, "column2": polars.Int32},
+                schema={"column1": polars.String, "column2": polars.String},
             ),
         )
     ],
@@ -46,3 +46,27 @@ def test_google_sheet_fetcher(pipeline, data, expected, mock_gsheet):
     actual = fetcher.fetch()
     assert not actual.is_empty()
     assert actual.equals(expected)
+
+
+def test_google_sheet_fetcher_returns_only_string_columns(mock_gsheet):
+    """Test that GoogleSheetFetcher returns dataframe with only string columns"""
+    pipeline = ETLPipeline(**GSHEET_ETL_PIPELINE)
+    data = {
+        "values": [["column1", "column2"], ["text_value", "123"], ["another_text", "456"]],
+    }
+
+    mock_gsheet.values.return_value.get.return_value.execute.return_value = data
+    mock_credentials = MagicMock(spec=Credentials)
+    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
+
+    df = fetcher.fetch()
+
+    # Verify all columns are strings
+    for column_name in df.columns:
+        assert (
+            df[column_name].dtype == polars.String
+        ), f"Column {column_name} should be String but is {df[column_name].dtype}"
+
+    # Verify data is preserved as strings
+    assert df["column1"].to_list() == ["text_value", "another_text"]
+    assert df["column2"].to_list() == ["123", "456"]
