@@ -171,3 +171,4 @@ cython_debug/
 # secrets
 secrets/
 config/*.yaml
+.claude/
