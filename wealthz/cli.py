@@ -5,6 +5,7 @@ from wealthz.factories import GoogleSheetFetcherFactory
 from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
 from wealthz.model import ETLPipeline
 from wealthz.settings import DuckLakeSettings
+from wealthz.transforms import ColumnTransformEngine
 
 
 @click.group()
@@ -28,4 +29,10 @@ def run(name: str) -> None:
     loader = DuckLakeLoader(conn)
 
     df = fetcher.fetch(pipeline)
+
+    # Apply column-level transforms if configured
+    if pipeline.has_transforms:
+        transform_engine = ColumnTransformEngine()
+        df = transform_engine.apply(df, pipeline.columns)
+
     loader.load(df, pipeline)
