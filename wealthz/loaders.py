@@ -132,7 +132,7 @@ class DuckLakeLoader(Loader):
     REPLICATION_STRATEGY_MAP: ClassVar[dict[ReplicationType, type[DuckLakeBaseReplicationStrategy]]] = {
         ReplicationType.FULL: DuckLakeFullReplicationStrategy,
         ReplicationType.APPEND: DuckLakeAppendReplicationStrategy,
-        ReplicationType.INCREMENTAL: DuckLakeAppendReplicationStrategy,
+        ReplicationType.INCREMENTAL: DuckLakeIncrementalReplicationStrategy,
     }
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
@@ -174,8 +174,9 @@ class DuckLakeConnManager:
     KEY_ID '$access_key_id',
     SECRET '$secret_access_key'
 );"""  # noqa: S105
-    ATTACH_TPL_STMT = "ATTACH 'ducklake:postgres:$connection' AS $name (DATA_PATH '$data_path');"
-    USE_LAKE_TPL_STMT = "USE $name"
+    ATTACH_TPL_STMT = """ATTACH 'ducklake:postgres:$connection'
+    AS $name (DATA_PATH '$data_path');"""
+    USE_LAKE_TPL_STMT = "USE $name;"
 
     def __init__(
         self,
