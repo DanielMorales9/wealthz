@@ -32,46 +32,59 @@ class TransformType(StrEnum):
     DATE_FORMAT = "date_format"
 
 
-class BaseParams(BaseModel):
-    pass
-
-
-class CastParams(BaseParams):
+class CastTransform(BaseModel):
+    type: Literal[TransformType.CAST] = TransformType.CAST
     target_type: ColumnType = Field(..., description="Target type for casting")
 
 
-class RegexReplaceParams(BaseParams):
+class TrimTransform(BaseModel):
+    type: Literal[TransformType.TRIM] = TransformType.TRIM
+
+
+class UpperTransform(BaseModel):
+    type: Literal[TransformType.UPPER] = TransformType.UPPER
+
+
+class LowerTransform(BaseModel):
+    type: Literal[TransformType.LOWER] = TransformType.LOWER
+
+
+class RegexReplaceTransform(BaseModel):
+    type: Literal[TransformType.REGEX_REPLACE] = TransformType.REGEX_REPLACE
     pattern: str = Field(..., description="Regular expression pattern")
     replacement: str = Field(default="", description="Replacement string")
 
 
-class SplitParams(BaseParams):
+class SplitTransform(BaseModel):
+    type: Literal[TransformType.SPLIT] = TransformType.SPLIT
     delimiter: str = Field(..., description="Delimiter to split on")
     index: int = Field(default=0, description="Index of part to extract")
 
 
-class SubstringParams(BaseParams):
+class SubstringTransform(BaseModel):
+    type: Literal[TransformType.SUBSTRING] = TransformType.SUBSTRING
     start: int = Field(default=0, description="Start position")
     length: Optional[int] = Field(default=None, description="Length of substring")
 
 
-class DateFormatParams(BaseParams):
+class DateFormatTransform(BaseModel):
+    type: Literal[TransformType.DATE_FORMAT] = TransformType.DATE_FORMAT
     input_format: str = Field(..., description="Input date format")
 
 
-ColumnTransformParams = Union[
-    BaseParams,
-    CastParams,
-    RegexReplaceParams,
-    SplitParams,
-    SubstringParams,
-    DateFormatParams,
+Transform = Annotated[
+    Union[
+        CastTransform,
+        TrimTransform,
+        UpperTransform,
+        LowerTransform,
+        RegexReplaceTransform,
+        SplitTransform,
+        SubstringTransform,
+        DateFormatTransform,
+    ],
+    Field(discriminator="type"),
 ]
-
-
-class Transform(BaseConfig):
-    type: TransformType
-    params: ColumnTransformParams = Field(default_factory=BaseParams)
 
 
 class Column(BaseConfig):

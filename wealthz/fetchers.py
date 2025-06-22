@@ -6,22 +6,12 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from polars import DataFrame
 
-from wealthz.model import ColumnType, ETLPipeline
+from wealthz.model import ETLPipeline
 
 
 class Fetcher(ABC):
     @abc.abstractmethod
     def fetch(self, pipeline: ETLPipeline) -> DataFrame: ...
-
-
-POLARS_SCHEMA_OVERRIDE = {
-    ColumnType.STRING: polars.String,
-    ColumnType.INTEGER: polars.Int32,
-    ColumnType.FLOAT: polars.Float32,
-    ColumnType.BOOLEAN: polars.Boolean,
-    ColumnType.DATE: polars.Date,
-    ColumnType.TIMESTAMP: polars.Datetime,
-}
 
 
 class GoogleSheetFetcher(Fetcher):

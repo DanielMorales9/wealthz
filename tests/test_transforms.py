@@ -1,63 +1,54 @@
 import polars as pl
 import pytest
 from polars.polars import ColumnNotFoundError, InvalidOperationError
-from pydantic import ValidationError
 
 from wealthz.model import (
-    BaseParams,
-    CastParams,
+    CastTransform,
     Column,
     ColumnType,
-    DateFormatParams,
-    RegexReplaceParams,
-    SplitParams,
-    SubstringParams,
-    Transform,
-    TransformType,
-)
-from wealthz.transforms import (
-    CastTransform,
-    ColumnTransformEngine,
-    LowerTransform,
+    DateFormatTransform,
     RegexReplaceTransform,
     SplitTransform,
     SubstringTransform,
     TrimTransform,
     UpperTransform,
 )
+from wealthz.transforms import (
+    CastColumnTransform,
+    ColumnTransformEngine,
+    LowerColumnTransform,
+    RegexReplaceColumnTransform,
+    SplitColumnTransform,
+    SubstringColumnTransform,
+    TrimColumnTransform,
+    UpperColumnTransform,
+)
 
 
 def test_cast_transform():
-    transform = CastTransform()
+    transform = CastColumnTransform()
     expr = pl.col("test")
 
     # Test string to integer
-    params = CastParams(target_type="integer")
+    params = CastTransform(target_type=ColumnType.INTEGER)
     result = transform.apply(expr, params)
     df = pl.DataFrame({"test": ["1", "2", "3"]}).select(result.alias("test"))
     assert df.dtypes[0] == pl.Int64
     assert df["test"].to_list() == [1, 2, 3]
 
 
-def test_cast_transform_error():
-    with pytest.raises(
-        ValidationError, match="Input should be 'string', 'integer', 'float', 'boolean', 'date' or 'timestamp'"
-    ):
-        CastParams(target_type="invalid")
-
-
 def test_trim_transform():
-    transform = TrimTransform()
+    transform = TrimColumnTransform()
     expr = pl.col("test")
 
-    result = transform.apply(expr, BaseParams())
+    result = transform.apply(expr, TrimTransform())
     df = pl.DataFrame({"test": ["  hello  ", " world ", "test"]}).select(result.alias("test"))
     assert df["test"].to_list() == ["hello", "world", "test"]
 
 
 def test_upper_lower_transforms():
-    upper_transform = UpperTransform()
-    lower_transform = LowerTransform()
+    upper_transform = UpperColumnTransform()
+    lower_transform = LowerColumnTransform()
     expr = pl.col("test")
 
     # Test uppercase
@@ -72,26 +63,26 @@ def test_upper_lower_transforms():
 
 
 def test_regex_replace_transform():
-    transform = RegexReplaceTransform()
+    transform = RegexReplaceColumnTransform()
     expr = pl.col("test")
 
-    params = RegexReplaceParams(pattern=r"\d+", replacement="X")
+    params = RegexReplaceTransform(pattern=r"\d+", replacement="X")
     result = transform.apply(expr, params)
     df = pl.DataFrame({"test": ["abc123def", "456xyz", "no numbers"]}).select(result.alias("test"))
     assert df["test"].to_list() == ["abcXdef", "Xxyz", "no numbers"]
 
 
 def test_split_transform():
-    transform = SplitTransform()
+    transform = SplitColumnTransform()
     expr = pl.col("test")
 
     # Test default index (0)
-    result = transform.apply(expr, SplitParams(delimiter=","))
+    result = transform.apply(expr, SplitTransform(delimiter=","))
     df = pl.DataFrame({"test": ["a,b,c", "x,y", "single"]}).select(result.alias("test"))
     assert df["test"].to_list() == ["a", "x", "single"]
 
     # Test specific index
-    result = transform.apply(expr, SplitParams(delimiter=",", index=1))
+    result = transform.apply(expr, SplitTransform(delimiter=",", index=1))
     df = pl.DataFrame({"test": ["a,b,c", "x,y", "single"]}).select(result.alias("test"))
     expected = ["b", "y", None]  # Polars returns None for out-of-bounds
     actual = df["test"].to_list()
@@ -99,16 +90,16 @@ def test_split_transform():
 
 
 def test_substring_transform():
-    transform = SubstringTransform()
+    transform = SubstringColumnTransform()
     expr = pl.col("test")
 
     # Test start only
-    result = transform.apply(expr, SubstringParams(start=2))
+    result = transform.apply(expr, SubstringTransform(start=2))
     df = pl.DataFrame({"test": ["hello", "world", "hi"]}).select(result.alias("test"))
     assert df["test"].to_list() == ["llo", "rld", ""]
 
     # Test start and length
-    result = transform.apply(expr, SubstringParams(start=1, length=3))
+    result = transform.apply(expr, SubstringTransform(start=1, length=3))
     df = pl.DataFrame({"test": ["hello", "world", "hi"]}).select(result.alias("test"))
     assert df["test"].to_list() == ["ell", "orl", "i"]
 
@@ -129,22 +120,22 @@ def test_apply_transforms_simple():
             name="name",
             type=ColumnType.STRING,
             transforms=[
-                Transform(type=TransformType.TRIM),
-                Transform(type=TransformType.UPPER),
+                TrimTransform(),
+                UpperTransform(),
             ],
         ),
         Column(
             name="age",
             type=ColumnType.INTEGER,
             transforms=[
-                Transform(type=TransformType.CAST, params=CastParams(target_type=ColumnType.INTEGER)),
+                CastTransform(target_type=ColumnType.INTEGER),
             ],
         ),
         Column(
             name="city",
             type=ColumnType.STRING,
             transforms=[
-                Transform(type=TransformType.UPPER),
+                UpperTransform(),
             ],
         ),
     ]
@@ -167,8 +158,8 @@ def test_apply_transforms_with_missing_columns():
 
     # Define columns including non-existent one
     columns = [
-        Column(name="existing", type=ColumnType.STRING, transforms=[Transform(type=TransformType.UPPER)]),
-        Column(name="missing", type=ColumnType.STRING, transforms=[Transform(type=TransformType.UPPER)]),
+        Column(name="existing", type=ColumnType.STRING, transforms=[UpperTransform()]),
+        Column(name="missing", type=ColumnType.STRING, transforms=[UpperTransform()]),
     ]
 
     with pytest.raises(ColumnNotFoundError, match="missing"):
@@ -189,9 +180,9 @@ def test_apply_transforms_order():
             name="test",
             type=ColumnType.STRING,
             transforms=[
-                Transform(type=TransformType.UPPER),
-                Transform(type=TransformType.TRIM),
-                Transform(type=TransformType.SPLIT, params={"delimiter": ",", "index": 0}),
+                UpperTransform(),
+                TrimTransform(),
+                SplitTransform(delimiter=",", index=0),
             ],
         ),
     ]
@@ -216,7 +207,7 @@ def test_transform_error_handling():
             name="test",
             type=ColumnType.INTEGER,
             transforms=[
-                Transform(type=TransformType.CAST, params={"target_type": "integer"}),
+                CastTransform(target_type=ColumnType.INTEGER),
             ],
         ),
     ]
@@ -277,31 +268,31 @@ def test_financial_data_transforms():
             name="Date",
             type=ColumnType.DATE,
             transforms=[
-                Transform(type=TransformType.TRIM),
-                Transform(type=TransformType.DATE_FORMAT, params=DateFormatParams(input_format="%m/%d/%Y")),
+                TrimTransform(),
+                DateFormatTransform(input_format="%m/%d/%Y"),
             ],
         ),
         Column(
             name="Symbol",
             type=ColumnType.STRING,
             transforms=[
-                Transform(type=TransformType.TRIM),
-                Transform(type=TransformType.UPPER),
+                TrimTransform(),
+                UpperTransform(),
             ],
         ),
         Column(
             name="Quantity",
             type=ColumnType.INTEGER,
             transforms=[
-                Transform(type=TransformType.CAST, params=CastParams(target_type=ColumnType.INTEGER)),
+                CastTransform(target_type=ColumnType.INTEGER),
             ],
         ),
         Column(
             name="Price",
             type=ColumnType.FLOAT,
             transforms=[
-                Transform(type=TransformType.REGEX_REPLACE, params=RegexReplaceParams(pattern=r"(\$|,)")),
-                Transform(type=TransformType.CAST, params=CastParams(target_type=ColumnType.FLOAT)),
+                RegexReplaceTransform(pattern=r"(\$|,)"),
+                CastTransform(target_type=ColumnType.FLOAT),
             ],
         ),
         Column(
@@ -312,9 +303,9 @@ def test_financial_data_transforms():
             name="Fees",
             type=ColumnType.FLOAT,
             transforms=[
-                Transform(type=TransformType.REGEX_REPLACE, params=RegexReplaceParams(pattern="N/A", replacement="0")),
-                Transform(type=TransformType.REGEX_REPLACE, params=RegexReplaceParams(pattern=r"(\$|,)")),
-                Transform(type=TransformType.CAST, params=CastParams(target_type=ColumnType.FLOAT)),
+                RegexReplaceTransform(pattern="N/A", replacement="0"),
+                RegexReplaceTransform(pattern=r"(\$|,)"),
+                CastTransform(target_type=ColumnType.FLOAT),
             ],
         ),
     ]

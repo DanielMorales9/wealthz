@@ -7,14 +7,14 @@ import polars as pl
 from polars import DataType
 
 from wealthz.model import (
-    BaseParams,
-    CastParams,
+    CastTransform,
     Column,
     ColumnType,
-    DateFormatParams,
-    RegexReplaceParams,
-    SplitParams,
-    SubstringParams,
+    DateFormatTransform,
+    RegexReplaceTransform,
+    SplitTransform,
+    SubstringTransform,
+    Transform,
     TransformType,
 )
 
@@ -23,12 +23,12 @@ class ColumnTransform(ABC):
     """Abstract base class for all transforms."""
 
     @abstractmethod
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
         """Apply the transform to a Polars expression."""
         pass
 
 
-class CastTransform(ColumnTransform):
+class CastColumnTransform(ColumnTransform):
     """Cast column to specified type."""
 
     TYPE_MAPPING: ClassVar[dict[ColumnType, type[DataType]]] = {
@@ -40,67 +40,67 @@ class CastTransform(ColumnTransform):
         ColumnType.TIMESTAMP: pl.Datetime,
     }
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
-        params = cast(CastParams, params)
-        _type: type[DataType] = self.TYPE_MAPPING[params.target_type]
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
+        transform = cast(CastTransform, transform)
+        _type: type[DataType] = self.TYPE_MAPPING[transform.target_type]
         return expr.cast(_type)
 
 
-class TrimTransform(ColumnTransform):
+class TrimColumnTransform(ColumnTransform):
     """Trim whitespace from string columns."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
         return expr.str.strip_chars()
 
 
-class UpperTransform(ColumnTransform):
+class UpperColumnTransform(ColumnTransform):
     """Convert string to uppercase."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
         return expr.str.to_uppercase()
 
 
-class LowerTransform(ColumnTransform):
+class LowerColumnTransform(ColumnTransform):
     """Convert string to lowercase."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
         return expr.str.to_lowercase()
 
 
-class RegexReplaceTransform(ColumnTransform):
+class RegexReplaceColumnTransform(ColumnTransform):
     """Replace using regular expressions."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
-        params = cast(RegexReplaceParams, params)
-        return expr.str.replace_all(params.pattern, params.replacement, literal=False)
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
+        transform = cast(RegexReplaceTransform, transform)
+        return expr.str.replace_all(transform.pattern, transform.replacement, literal=False)
 
 
-class SplitTransform(ColumnTransform):
+class SplitColumnTransform(ColumnTransform):
     """Split string and extract specific part."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
-        params = cast(SplitParams, params)
-        return expr.str.split(params.delimiter).list.get(params.index, null_on_oob=True)
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
+        transform = cast(SplitTransform, transform)
+        return expr.str.split(transform.delimiter).list.get(transform.index, null_on_oob=True)
 
 
-class SubstringTransform(ColumnTransform):
+class SubstringColumnTransform(ColumnTransform):
     """Extract substring."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
-        params = cast(SubstringParams, params)
-        if params.length is not None:
-            return expr.str.slice(params.start, params.length)
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
+        transform = cast(SubstringTransform, transform)
+        if transform.length is not None:
+            return expr.str.slice(transform.start, transform.length)
         else:
-            return expr.str.slice(params.start)
+            return expr.str.slice(transform.start)
 
 
-class DateFormatTransform(ColumnTransform):
+class DateFormatColumnTransform(ColumnTransform):
     """Parse date strings with custom format."""
 
-    def apply(self, expr: pl.Expr, params: BaseParams) -> pl.Expr:
-        params = cast(DateFormatParams, params)
+    def apply(self, expr: pl.Expr, transform: Transform) -> pl.Expr:
+        transform = cast(DateFormatTransform, transform)
         # Use strict=False to handle parsing errors gracefully
-        parsed = expr.str.to_datetime(params.input_format)
+        parsed = expr.str.to_datetime(transform.input_format)
         return parsed
 
 
@@ -113,14 +113,14 @@ class ColumnTransformEngine:
     """Engine for applying column-level transforms to DataFrames."""
 
     COLUMN_TRANSFORM_MAP: ClassVar[dict[str, ColumnTransform]] = {
-        TransformType.CAST: CastTransform(),
-        TransformType.TRIM: TrimTransform(),
-        TransformType.UPPER: UpperTransform(),
-        TransformType.LOWER: LowerTransform(),
-        TransformType.REGEX_REPLACE: RegexReplaceTransform(),
-        TransformType.SPLIT: SplitTransform(),
-        TransformType.SUBSTRING: SubstringTransform(),
-        TransformType.DATE_FORMAT: DateFormatTransform(),
+        TransformType.CAST: CastColumnTransform(),
+        TransformType.TRIM: TrimColumnTransform(),
+        TransformType.UPPER: UpperColumnTransform(),
+        TransformType.LOWER: LowerColumnTransform(),
+        TransformType.REGEX_REPLACE: RegexReplaceColumnTransform(),
+        TransformType.SPLIT: SplitColumnTransform(),
+        TransformType.SUBSTRING: SubstringColumnTransform(),
+        TransformType.DATE_FORMAT: DateFormatColumnTransform(),
     }
 
     def apply(self, df: pl.DataFrame, columns: list[Column]) -> pl.DataFrame:
@@ -140,7 +140,7 @@ class ColumnTransformEngine:
         expr = pl.col(column.name)
         for transform in column.transforms:
             transform_impl = self.get_column_transform(transform.type)
-            expr = transform_impl.apply(expr, transform.params)
+            expr = transform_impl.apply(expr, transform)
         return expr.alias(column.name)
 
     def get_column_transform(self, transform: TransformType) -> ColumnTransform:
