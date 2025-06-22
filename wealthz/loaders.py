@@ -174,14 +174,14 @@ class DuckLakeConnManager:
     KEY_ID '$access_key_id',
     SECRET '$secret_access_key'
 );"""  # noqa: S105
-    ATTACH_TPL_STMT = "ATTACH 'ducklake:postgres:$connection' AS ducklake (DATA_PATH '$data_path');"
+    ATTACH_TPL_STMT = "ATTACH 'ducklake:postgres:$connection' AS $name (DATA_PATH '$data_path');"
+    USE_LAKE_TPL_STMT = "USE $name"
 
     def __init__(
         self,
         settings: DuckLakeSettings,
     ) -> None:
         self.settings = settings
-        self._pg_catalog_settings = settings.pg
         self._setup_file: TextIOWrapper | None = None
         self._conn = duckdb.connect()
         self._log_version()
@@ -196,8 +196,7 @@ class DuckLakeConnManager:
             ext_install_stmt = query_build(self.EXT_INSTALL_TPL_STMT, extension=ext.name, source=ext.source)
             ext_load_stmt = query_build(self.EXT_LOAD_TPL_STMT, extension=ext.name, source=ext.source)
 
-            self._execute(ext_install_stmt)
-            self._execute(ext_load_stmt)
+            self._execute(ext_install_stmt, ext_load_stmt)
 
     # noinspection PyUnreachableCode
     def configure_storage(self) -> None:
@@ -220,10 +219,12 @@ class DuckLakeConnManager:
         self._execute(create_secret_stmt)
 
     def configure_s3_storage(self) -> None:
+        statements = []
         for key, value in self.settings.storage.dict().items():
             if not (key in ("type", "data_path") or value is None):
                 set_stmt = query_build("SET s3_$key='$value';", key=key, value=value)
-                self._execute(set_stmt)
+                statements.append(set_stmt)
+        self._execute(*statements)
 
     def configure_catalog(self) -> None:
         # Attach DuckLake catalog
@@ -231,15 +232,14 @@ class DuckLakeConnManager:
             self.ATTACH_TPL_STMT,
             connection=self.settings.pg.connection,
             data_path=self.settings.storage.data_path,
+            name=self.settings.name,
         )
-        self._execute(attach_stmt)
-        self._execute("USE ducklake;")
+        use_stmt = query_build(self.USE_LAKE_TPL_STMT, name=self.settings.name)
+        self._execute(attach_stmt, use_stmt)
 
     def __enter__(self) -> "DuckLakeConnManager":
-        if self.settings.setup_path is None:
-            return self
-
-        self._setup_file = open(self.settings.setup_path, "w")
+        if self.settings.setup_path:
+            self._setup_file = open(self.settings.setup_path, "w")
         return self
 
     def __exit__(
@@ -250,13 +250,17 @@ class DuckLakeConnManager:
     ) -> Optional[bool]:
         if self._setup_file:
             self._setup_file.close()
-        return True
 
-    def _execute(self, stmt: str) -> None:
+        return not exc_type
+
+    def _execute(self, *statements: str) -> None:
         if self._setup_file:
-            self._setup_file.write(f"{stmt}\n")
+            for stmt in statements:
+                self._setup_file.write(f"{stmt}\n")
+            self._setup_file.write("\n")
 
-        self._conn.execute(stmt)
+        for stmt in statements:
+            self._conn.execute(stmt)
 
     def provision(self) -> DuckDBPyConnection:  # type: ignore[no-any-unimported]
         with self:

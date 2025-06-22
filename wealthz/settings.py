@@ -31,7 +31,8 @@ class StorageSettings(BaseSettings):
 
 
 class DuckLakeSettings(BaseSettings):
-    setup_path: str | None = None
+    name: str
+    setup_path: str = ""
     storage: StorageSettings
     pg: PostgresCatalogSettings
 
