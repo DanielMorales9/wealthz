@@ -23,3 +23,19 @@ GSHEET_ETL_PIPELINE = {
     "primary_keys": ["column1"],
     "replication": "full",
 }
+
+DUCKLAKE_ETL_PIPELINE = {
+    "engine": {"type": "duckdb"},
+    "name": "test_ducklake",
+    "columns": [
+        {"name": "id", "type": "integer"},
+        {"name": "name", "type": "string"},
+        {"name": "amount", "type": "float"},
+    ],
+    "datasource": {
+        "type": "ducklake",
+        "query": "SELECT id, name, amount FROM test_table",
+    },
+    "primary_keys": ["id"],
+    "replication": "full",
+}

@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from pathlib import Path
-from typing import Generic
+from typing import Generic, cast
 
+import duckdb
 from google.oauth2.service_account import Credentials
 
 from wealthz.constants import SECRETS_DIR
-from wealthz.fetchers import GoogleSheetFetcher
+from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher
 from wealthz.generics import T
-from wealthz.model import ETLPipeline
+from wealthz.model import DatasourceType, ETLPipeline, GoogleSheetDatasource
 
 SPREADSHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -36,9 +37,29 @@ class GoogleCredentialsFactory(Factory[Credentials]):
 
 class GoogleSheetFetcherFactory(Factory[GoogleSheetFetcher]):
     def __init__(self, pipeline: ETLPipeline) -> None:
-        self._credentials_path = SECRETS_DIR / pipeline.datasource.credentials_file
+        datasource = cast(GoogleSheetDatasource, pipeline.datasource)
+        self._credentials_path = SECRETS_DIR / datasource.credentials_file
 
     def create(self) -> GoogleSheetFetcher:
         creds_manager = GoogleCredentialsFactory(self._credentials_path, scope=GoogleCredentialsScope.SPREADSHEETS)
         credentials = creds_manager.create()
         return GoogleSheetFetcher(credentials)
+
+
+class UnknownDataSourceTypeError(ValueError):
+    def __init__(self, source_type: DatasourceType):
+        super().__init__(f"Unknown datasource type: {source_type}")
+
+
+class FetcherFactory:
+    """Factory for creating appropriate fetcher based on datasource type."""
+
+    @staticmethod
+    def create_fetcher(pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection) -> Fetcher:
+        """Create fetcher based on datasource type."""
+        if pipeline.datasource.type == DatasourceType.GOOGLE_SHEET:
+            return GoogleSheetFetcherFactory(pipeline).create()
+        elif pipeline.datasource.type == DatasourceType.DUCKLAKE:
+            return DuckLakeFetcher(conn)
+        else:
+            raise UnknownDataSourceTypeError(pipeline.datasource.type)

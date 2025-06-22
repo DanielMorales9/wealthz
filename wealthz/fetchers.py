@@ -1,12 +1,17 @@
 import abc
+import logging
 from abc import ABC
+from typing import cast
 
+import duckdb
 import polars
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from polars import DataFrame
 
-from wealthz.model import ETLPipeline
+from wealthz.model import DuckLakeDatasource, ETLPipeline, GoogleSheetDatasource
+
+logger = logging.getLogger(__name__)
 
 
 class Fetcher(ABC):
@@ -21,13 +26,14 @@ class GoogleSheetFetcher(Fetcher):
 
     def fetch(self, pipeline: ETLPipeline) -> DataFrame:
         # Fetch the sheet data
-        datasource = pipeline.datasource
+        logger.info("Fetching data from Google Sheet")
+        datasource = cast(GoogleSheetDatasource, pipeline.datasource)
         sheet_values = self._sheet_client.values()
         result = sheet_values.get(spreadsheetId=datasource.sheet_id, range=datasource.sheet_range).execute()
         values = result.get("values", [])
         schema = {col.name: polars.String for col in pipeline.columns}
         if not values:
-            print("No data found in the sheet.")
+            logger.info("No data found in the sheet.")
             return DataFrame(schema=schema)
 
         # First row as header
@@ -37,3 +43,14 @@ class GoogleSheetFetcher(Fetcher):
         df = DataFrame(rows, schema=schema, orient="row", infer_schema_length=0)
 
         return df
+
+
+class DuckLakeFetcher(Fetcher):
+    def __init__(self, conn: duckdb.DuckDBPyConnection):
+        self.conn = conn
+
+    def fetch(self, pipeline: ETLPipeline) -> DataFrame:
+        logging.info("Fetching data from DuckDB...")
+        datasource = cast(DuckLakeDatasource, pipeline.datasource)
+        logger.info("Query: %s", datasource.query)
+        return self.conn.execute(datasource.query).pl()

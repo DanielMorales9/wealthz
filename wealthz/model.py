@@ -112,6 +112,7 @@ class Table(BaseConfig):
 
 class DatasourceType(StrEnum):
     GOOGLE_SHEET = "gsheet"
+    DUCKLAKE = "ducklake"
 
 
 class GoogleSheetDatasource(BaseModel):
@@ -121,7 +122,12 @@ class GoogleSheetDatasource(BaseModel):
     credentials_file: str
 
 
-Datasource = Annotated[Union[GoogleSheetDatasource], Field(discriminator="type")]
+class DuckLakeDatasource(BaseModel):
+    type: Literal[DatasourceType.DUCKLAKE] = DatasourceType.DUCKLAKE
+    query: str = Field(..., description="Query string")
+
+
+Datasource = Annotated[Union[GoogleSheetDatasource, DuckLakeDatasource], Field(discriminator="type")]
 
 
 class EngineType(StrEnum):

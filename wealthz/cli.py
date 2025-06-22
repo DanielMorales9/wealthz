@@ -1,38 +1,62 @@
-import click as click
+import sys
+
+import click
+from pydantic import ValidationError
 
 from wealthz.constants import CONFIG_DIR
-from wealthz.factories import GoogleSheetFetcherFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
+from wealthz.logutils import get_logger
 from wealthz.model import ETLPipeline
-from wealthz.settings import DuckLakeSettings
-from wealthz.transforms import ColumnTransformEngine
+from wealthz.runner import PipelineRunner
+
+logger = get_logger(__name__)
 
 
 @click.group()
 def cli() -> None:
+    """Wealthz ETL Pipeline CLI."""
     pass
 
 
 @cli.command("run")
 @click.argument("name")
 def run(name: str) -> None:
-    config_path = CONFIG_DIR / f"{name}.yaml"
-    pipeline = ETLPipeline.from_yaml(config_path)
+    """Run an ETL pipeline by name.
 
-    factory = GoogleSheetFetcherFactory(pipeline)
-    fetcher = factory.create()
-    settings = DuckLakeSettings()  # type: ignore[call-arg]
-    manager = DuckLakeConnManager(settings)
-    conn = manager.provision()
-    syncer = DuckLakeSchemaSyncer(conn)
-    syncer.sync(pipeline)
-    loader = DuckLakeLoader(conn)
+    NAME: The name of the pipeline configuration file (without .yaml extension)
+    """
+    try:
+        # Validate config file exists
+        config_path = CONFIG_DIR / f"{name}.yaml"
+        if not config_path.exists():
+            click.echo(f"Error: Configuration file not found: {config_path}", err=True)
+            click.echo(f"Available configs in {CONFIG_DIR}:", err=True)
+            for yaml_file in CONFIG_DIR.glob("*.yaml"):
+                click.echo(f"  - {yaml_file.stem}", err=True)
+            sys.exit(1)
 
-    df = fetcher.fetch(pipeline)
+        # Load and validate pipeline configuration
+        try:
+            pipeline = ETLPipeline.from_yaml(config_path)
+        except ValidationError as e:
+            click.echo(f"Error: Invalid pipeline configuration: {e}", err=True)
+            sys.exit(1)
+        except Exception as e:
+            click.echo(f"Error: Failed to load configuration: {e}", err=True)
+            sys.exit(1)
 
-    # Apply column-level transforms if configured
-    if pipeline.has_transforms:
-        transform_engine = ColumnTransformEngine()
-        df = transform_engine.apply(df, pipeline.columns)
+        # Execute pipeline
+        runner = PipelineRunner()
+        runner.run(pipeline)
 
-    loader.load(df, pipeline)
+        click.echo("Pipeline executed successfully")
+
+    except KeyboardInterrupt:
+        click.echo("\nPipeline execution interrupted by user", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Pipeline execution failed: {e}", err=True)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()
