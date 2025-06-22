@@ -73,7 +73,7 @@ class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
         insert_stmt = query_build(
             self.INSERT_TPL_STMT,
             table_name=pipeline.name,
-            columns=",".join(pipeline.column_names),
+            columns=", ".join(pipeline.column_names),
             staging_table_name=self.staging_table_name,
         )
         logger.info(insert_stmt)
