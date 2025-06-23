@@ -1,9 +1,11 @@
-from wealthz.cli import logger
 from wealthz.factories import FetcherFactory
 from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
+from wealthz.logutils import get_logger
 from wealthz.model import ETLPipeline
 from wealthz.settings import DuckLakeSettings
 from wealthz.transforms import ColumnTransformEngine
+
+logger = get_logger(__name__)
 
 
 class PipelineRunner:

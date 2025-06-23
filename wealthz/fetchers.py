@@ -9,9 +9,10 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from polars import DataFrame
 
+from wealthz.logutils import get_logger
 from wealthz.model import DuckLakeDatasource, ETLPipeline, GoogleSheetDatasource
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Fetcher(ABC):
