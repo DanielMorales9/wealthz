@@ -21,6 +21,7 @@ pydantic = "^2.11.4"
 pyarrow = "^20.0.0"
 python-dotenv = "^1.1.0"
 click = "^8.2.1"
+yfinance = "^0.2.63"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
@@ -47,8 +48,6 @@ check_untyped_defs = "True"
 warn_return_any = "True"
 warn_unused_ignores = "True"
 show_error_codes = "True"
-[[tool.mypy.overrides]]
-module = "duckdb.*"
 ignore_missing_imports = true
 
 
