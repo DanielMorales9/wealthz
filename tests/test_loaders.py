@@ -75,6 +75,7 @@ TEST_PEOPLE_PIPELINE = ETLPipeline(
 )
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("replication", list(ReplicationType))
 def test_ducklake_with_minio_and_postgres(postgres_container, replication):
     # Start Postgres

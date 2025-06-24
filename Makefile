@@ -16,8 +16,13 @@ verify: ## Run code quality tools.
 
 .PHONY: test
 test: ## Test the code with pytest
-	@echo "🚀 Testing code: Running pytest"
+	@echo "🚀 Testing code: all"
 	@poetry run pytest --doctest-modules
+
+.PHONY: unittest
+unittest: ## Test the code with pytest
+	@echo "🚀 Testing code: unit"
+	@poetry run pytest --doctest-modules -m "not integration"
 
 .PHONY: build
 build: clean-build ## Build wheel file using poetry

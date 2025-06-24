@@ -56,6 +56,7 @@ ignore_missing_imports = true
 minversion = "7.0"
 addopts = "--cov=wealthz --cov-report=term-missing --cov-fail-under=80 --tb=short"
 testpaths = ["tests"]
+markers = "integration: marks tests as integration"
 
 [tool.ruff]
 target-version = "py39"
