@@ -7,7 +7,7 @@ import duckdb
 from google.oauth2.service_account import Credentials
 
 from wealthz.constants import SECRETS_DIR
-from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher
+from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher, YFinanceFetcher
 from wealthz.generics import T
 from wealthz.model import DatasourceType, ETLPipeline, GoogleSheetDatasource
 
@@ -61,5 +61,7 @@ class FetcherFactory:
             return GoogleSheetFetcherFactory(pipeline).create()
         elif pipeline.datasource.type == DatasourceType.DUCKLAKE:
             return DuckLakeFetcher(conn)
+        elif pipeline.datasource.type == DatasourceType.YFINANCE:
+            return YFinanceFetcher()
         else:
             raise UnknownDataSourceTypeError(pipeline.datasource.type)

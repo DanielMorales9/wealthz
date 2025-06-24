@@ -1,13 +1,16 @@
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import duckdb
+import pandas as pd
 import polars
 import pytest
-from conftest import DUCKLAKE_ETL_PIPELINE, GSHEET_ETL_PIPELINE
+import pytz
+from conftest import DUCKLAKE_ETL_PIPELINE, GSHEET_ETL_PIPELINE, YFINANCE_ETL_PIPELINE
 from google.auth.credentials import Credentials
 from polars import DataFrame
 
-from wealthz.fetchers import DuckLakeFetcher, GoogleSheetFetcher
+from wealthz.fetchers import DuckLakeFetcher, GoogleSheetFetcher, YFinanceFetcher
 from wealthz.model import ETLPipeline
 
 
@@ -17,6 +20,11 @@ def mock_gsheet():
         mock_build = MagicMock()
         mock_client_builder.return_value = mock_build
         yield mock_build.spreadsheets.return_value
+
+
+@pytest.fixture()
+def test_dataframe():
+    return DataFrame({"id": [1], "name": ["test"], "amount": [100.0]})
 
 
 @pytest.mark.parametrize(
@@ -150,10 +158,10 @@ def test_ducklake_fetcher_query_execution_error(mock_duckdb_conn, ducklake_pipel
 
 
 @patch("wealthz.fetchers.logging")
-def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pipeline):
+def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pipeline, test_dataframe):
     """Test that DuckLakeFetcher logs the query being executed."""
     # Setup mock return data
-    expected_df = DataFrame({"id": [1], "name": ["test"], "amount": [100.0]})
+    expected_df = test_dataframe
     mock_result = MagicMock()
     mock_result.pl.return_value = expected_df
     mock_duckdb_conn.execute.return_value = mock_result
@@ -168,10 +176,10 @@ def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pi
 
 
 @patch("wealthz.fetchers.logger")
-def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, ducklake_pipeline):
+def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, ducklake_pipeline, test_dataframe):
     """Test that DuckLakeFetcher logs query details."""
     # Setup mock return data
-    expected_df = DataFrame({"id": [1], "name": ["test"], "amount": [100.0]})
+    expected_df = test_dataframe
     mock_result = MagicMock()
     mock_result.pl.return_value = expected_df
     mock_duckdb_conn.execute.return_value = mock_result
@@ -238,3 +246,26 @@ def test_ducklake_fetcher_various_queries(mock_duckdb_conn, query, expected_data
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with(query)
     assert result.equals(expected_data)
+
+
+@pytest.fixture()
+def ticker_pipeline():
+    """Create a Ticker ETL pipeline for testing."""
+    return ETLPipeline(**YFINANCE_ETL_PIPELINE)
+
+
+@patch("wealthz.fetchers.yf")
+def test_yfinance_fetcher_retrieves_data(mock_yfinance, ticker_pipeline, test_dataframe):
+    """Test that YFinanceFetcher retrieves data from YFinance."""
+    expected_df = pd.DataFrame(
+        data={"id": [1], "name": ["test"], "amount": [100.0]},
+        index=[datetime(2024, 1, 1, 2, 0, 0, tzinfo=pytz.timezone("CET"))],
+    )
+    fetcher = YFinanceFetcher()
+    mock_yfinance.Ticker.return_value = mock_yticker = MagicMock()
+    mock_yticker.history.return_value = expected_df
+    expected_df = fetcher.fetch(ticker_pipeline)
+
+    assert mock_yfinance.Ticker.called
+    assert mock_yticker.history.called
+    assert expected_df.columns == ["index", "id", "name", "amount", "Symbol"]

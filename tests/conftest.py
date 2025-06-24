@@ -39,3 +39,25 @@ DUCKLAKE_ETL_PIPELINE = {
     "primary_keys": ["id"],
     "replication": "full",
 }
+
+YFINANCE_ETL_PIPELINE = {
+    "engine": {"type": "duckdb"},
+    "name": "test_ticker",
+    "columns": [
+        {"name": "Date", "type": "date"},
+        {"name": "Open", "type": "float"},
+        {"name": "High", "type": "float"},
+        {"name": "Low", "type": "float"},
+        {"name": "Close", "type": "float"},
+        {"name": "Adj Close", "type": "float"},
+        {"name": "Volume", "type": "integer"},
+    ],
+    "datasource": {
+        "type": "yfinance",
+        "symbols": ["AAPL"],
+        "period": "1d",
+        "interval": "1h",
+    },
+    "primary_keys": ["Date"],
+    "replication": "full",
+}

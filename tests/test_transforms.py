@@ -33,7 +33,7 @@ def test_cast_transform():
     params = CastTransform(target_type=ColumnType.INTEGER)
     result = transform.apply(expr, params)
     df = pl.DataFrame({"test": ["1", "2", "3"]}).select(result.alias("test"))
-    assert df.dtypes[0] == pl.Int64
+    assert df.dtypes[0] == pl.Int32
     assert df["test"].to_list() == [1, 2, 3]
 
 
@@ -146,7 +146,7 @@ def test_apply_transforms_simple():
     # Verify results
     assert result["name"].to_list() == ["JOHN", "JANE", "BOB"]
     assert result["age"].to_list() == [25, 30, 35]
-    assert result["age"].dtype == pl.Int64
+    assert result["age"].dtype == pl.Int32
     assert result["city"].to_list() == ["NEW YORK", "LOS ANGELES", "CHICAGO"]
 
 
@@ -214,7 +214,7 @@ def test_transform_error_handling():
 
     # Should raise TransformError
     with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `i64` failed in column 'test' for 1 out of 1 values:"
+        InvalidOperationError, match="conversion from `str` to `i32` failed in column 'test' for 1 out of 1 values:"
     ):
         engine.apply(df, columns)
 
@@ -259,7 +259,7 @@ def test_financial_data_transforms():
         "Quantity": ["100", "50", "200"],
         "Price": ["$150.50", "$2,800.00", "$400.25"],
         "Type": ["BUY", "SELL", "BUY"],
-        "Fees": ["$9.99", "N/A", "$12.50"],
+        "Fees": ["$9.1", "N/A", "$12.50"],
     })
 
     # Define comprehensive transforms
@@ -316,7 +316,7 @@ def test_financial_data_transforms():
     # Verify results
     assert result["Symbol"].to_list() == ["AAPL", "GOOGL", "MSFT"]
     assert result["Quantity"].to_list() == [100, 50, 200]
-    assert result["Quantity"].dtype == pl.Int64
+    assert result["Quantity"].dtype == pl.Int32
     assert result["Price"].to_list() == [150.50, 2800.00, 400.25]
     assert result["Type"].to_list() == ["BUY", "SELL", "BUY"]
-    assert result["Fees"].to_list() == [9.99, 0.0, 12.50]
+    assert result["Fees"].to_list() == [9.100000381469727, 0.0, 12.5]

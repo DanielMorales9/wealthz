@@ -3,9 +3,26 @@ from functools import cached_property
 from pathlib import Path
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from wealthz.utils import load_yaml
+
+YAHOO_FINANCE_VALID_INTERVAL = (
+    "1m",
+    "2m",
+    "5m",
+    "15m",
+    "30m",
+    "60m",
+    "90m",
+    "1h",
+    "4h",
+    "1d",
+    "5d",
+    "1wk",
+    "1mo",
+    "3mo",
+)
 
 
 class BaseConfig(BaseModel):
@@ -15,7 +32,9 @@ class BaseConfig(BaseModel):
 class ColumnType(StrEnum):
     STRING = "string"
     INTEGER = "integer"
+    LONG = "long"
     FLOAT = "float"
+    DOUBLE = "double"
     BOOLEAN = "boolean"
     DATE = "date"
     TIMESTAMP = "timestamp"
@@ -113,6 +132,7 @@ class Table(BaseConfig):
 class DatasourceType(StrEnum):
     GOOGLE_SHEET = "gsheet"
     DUCKLAKE = "ducklake"
+    YFINANCE = "yfinance"
 
 
 class GoogleSheetDatasource(BaseModel):
@@ -127,7 +147,22 @@ class DuckLakeDatasource(BaseModel):
     query: str = Field(..., description="Query string")
 
 
-Datasource = Annotated[Union[GoogleSheetDatasource, DuckLakeDatasource], Field(discriminator="type")]
+class YFinanceDatasource(BaseModel):
+    type: Literal[DatasourceType.YFINANCE] = DatasourceType.YFINANCE
+    symbols: list[str] = Field(..., description="Stock ticker symbol (e.g., AAPL)")
+    period: str = Field(..., description="Stock ticker period")
+    interval: str = Field(..., description="Stock ticker interval")
+
+    @field_validator("interval")
+    def validate_interval(cls, interval: str) -> str:
+        if interval not in YAHOO_FINANCE_VALID_INTERVAL:
+            raise ValueError(f"Invalid interval '{interval}'")
+        return interval
+
+
+Datasource = Annotated[
+    Union[GoogleSheetDatasource, DuckLakeDatasource, YFinanceDatasource], Field(discriminator="type")
+]
 
 
 class EngineType(StrEnum):

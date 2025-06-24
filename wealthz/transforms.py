@@ -33,8 +33,10 @@ class CastColumnTransform(ColumnTransform):
 
     TYPE_MAPPING: ClassVar[dict[ColumnType, type[DataType]]] = {
         ColumnType.STRING: pl.Utf8,
-        ColumnType.INTEGER: pl.Int64,
-        ColumnType.FLOAT: pl.Float64,
+        ColumnType.INTEGER: pl.Int32,
+        ColumnType.LONG: pl.Int64,
+        ColumnType.FLOAT: pl.Float32,
+        ColumnType.DOUBLE: pl.Float64,
         ColumnType.BOOLEAN: pl.Boolean,
         ColumnType.DATE: pl.Date,
         ColumnType.TIMESTAMP: pl.Datetime,
