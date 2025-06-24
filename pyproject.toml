@@ -98,6 +98,7 @@ lint.ignore = [
     "E501",
     # DoNotAssignLambda
     "E731",
+    "TRY003",
 ]
 
 [tool.ruff.format]
