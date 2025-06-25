@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from pathlib import Path
 from typing import Generic, cast
 
 import duckdb
@@ -25,8 +24,8 @@ class GoogleCredentialsScope(StrEnum):
 
 
 class GoogleCredentialsFactory(Factory[Credentials]):
-    def __init__(self, path: Path, scope: GoogleCredentialsScope | None = None):
-        self._credentials_path = path
+    def __init__(self, credential_file_name: str, scope: GoogleCredentialsScope | None = None):
+        self._credentials_path = SECRETS_DIR / credential_file_name
         self._scopes = []
         if scope == GoogleCredentialsScope.SPREADSHEETS:
             self._scopes = SPREADSHEETS_SCOPES
@@ -35,33 +34,34 @@ class GoogleCredentialsFactory(Factory[Credentials]):
         return Credentials.from_service_account_file(self._credentials_path, scopes=self._scopes)  # type: ignore[no-any-return]
 
 
-class GoogleSheetFetcherFactory(Factory[GoogleSheetFetcher]):
-    def __init__(self, pipeline: ETLPipeline) -> None:
-        datasource = cast(GoogleSheetDatasource, pipeline.datasource)
-        self._credentials_path = SECRETS_DIR / datasource.credentials_file
-
-    def create(self) -> GoogleSheetFetcher:
-        creds_manager = GoogleCredentialsFactory(self._credentials_path, scope=GoogleCredentialsScope.SPREADSHEETS)
-        credentials = creds_manager.create()
-        return GoogleSheetFetcher(credentials)
-
-
 class UnknownDataSourceTypeError(ValueError):
     def __init__(self, source_type: DatasourceType):
         super().__init__(f"Unknown datasource type: {source_type}")
 
 
-class FetcherFactory:
+class FetcherFactory(Factory[Fetcher]):
     """Factory for creating appropriate fetcher based on datasource type."""
 
-    @staticmethod
-    def create_fetcher(pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection) -> Fetcher:
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection) -> None:
+        self._pipeline = pipeline
+        self._conn = conn
+
+    def create_gsheet_datasource(self) -> GoogleSheetFetcher:
+        gsheet_datasource = cast(GoogleSheetDatasource, self._pipeline.datasource)
+        creds_factory = GoogleCredentialsFactory(
+            gsheet_datasource.credentials_file, scope=GoogleCredentialsScope.SPREADSHEETS
+        )
+        credentials = creds_factory.create()
+        return GoogleSheetFetcher(credentials)
+
+    def create(self) -> Fetcher:
         """Create fetcher based on datasource type."""
-        if pipeline.datasource.type == DatasourceType.GOOGLE_SHEET:
-            return GoogleSheetFetcherFactory(pipeline).create()
-        elif pipeline.datasource.type == DatasourceType.DUCKLAKE:
-            return DuckLakeFetcher(conn)
-        elif pipeline.datasource.type == DatasourceType.YFINANCE:
+        datasource_type = self._pipeline.datasource.type
+        if datasource_type == DatasourceType.GOOGLE_SHEET:
+            return self.create_gsheet_datasource()
+        elif datasource_type == DatasourceType.DUCKLAKE:
+            return DuckLakeFetcher(self._conn)
+        elif datasource_type == DatasourceType.YFINANCE:
             return YFinanceFetcher()
         else:
-            raise UnknownDataSourceTypeError(pipeline.datasource.type)
+            raise UnknownDataSourceTypeError(datasource_type)
