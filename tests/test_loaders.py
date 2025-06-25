@@ -10,6 +10,7 @@ from duckdb.duckdb import DuckDBPyConnection
 from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
+from tests.conftest import PEOPLE_ETL_PIPELINE
 from wealthz.loaders import (
     DuckLakeConnManager,
     DuckLakeFullReplicationStrategy,
@@ -19,7 +20,7 @@ from wealthz.loaders import (
     UnknownReplicationStrategy,
     query_build,
 )
-from wealthz.model import ETLPipeline, ReplicationType
+from wealthz.model import ReplicationType
 from wealthz.settings import DuckLakeSettings, PostgresCatalogSettings, StorageSettings
 
 
@@ -27,7 +28,7 @@ def test_when_loading_into_ducklake_then_succeeds():
     mock_conn = MagicMock(spec=DuckDBPyConnection)
     loader = DuckLakeLoader(mock_conn)
     df = pl.DataFrame({"id": [4, 5], "name": ["David", "Eve"]})
-    loader.load(df, ETLPipeline(**GSHEET_ETL_PIPELINE))
+    loader.load(df, GSHEET_ETL_PIPELINE)
     mock_conn.register.called_once_with("staging", df)
     mock_conn.execute.called_once_with("INSERT INTO public.people SELECT * FROM staging")
 
@@ -55,24 +56,6 @@ def postgres_container():
         print(f"Host: {postgres.get_container_host_ip()}")
         print(f"Port: {postgres.get_exposed_port(5432)}")
         yield postgres
-
-
-TEST_PEOPLE_PIPELINE = ETLPipeline(
-    engine={"type": "duckdb"},
-    name="people",
-    columns=[
-        {"name": "id", "type": "integer"},
-        {"name": "name", "type": "string"},
-    ],
-    datasource={
-        "type": "gsheet",
-        "sheet_id": "test-id",
-        "sheet_range": "test-sheet-range",
-        "credentials_file": "mock-creds.json",
-    },
-    primary_keys=["id"],
-    replication="full",
-)
 
 
 @pytest.mark.integration
@@ -106,12 +89,12 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
         manager = DuckLakeConnManager(settings)
         conn = manager.provision()
         syncer = DuckLakeSchemaSyncer(conn)
-        syncer.sync(TEST_PEOPLE_PIPELINE)
+        syncer.sync(PEOPLE_ETL_PIPELINE)
 
         # Create table and insert test data
         df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
         # Register the dataframe as a DuckDB view
-        pipeline = copy(TEST_PEOPLE_PIPELINE)
+        pipeline = copy(PEOPLE_ETL_PIPELINE)
         pipeline.replication = replication
         assert pipeline.replication == replication
         DuckLakeLoader(conn).load(df, pipeline)
@@ -139,7 +122,7 @@ def test_replication_strategy_pass():
             pass
 
     strategy = TestStrategy()
-    strategy.replicate(TEST_PEOPLE_PIPELINE)
+    strategy.replicate(PEOPLE_ETL_PIPELINE)
 
 
 def test_duck_lake_schema_syncer_extract_duck_type():
@@ -162,7 +145,7 @@ def test_duck_lake_base_replication_execute_delete_where():
     mock_conn.execute.return_value.fetchone.return_value = [5]
 
     strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
-    strategy.execute_delete_where(TEST_PEOPLE_PIPELINE)
+    strategy.execute_delete_where(PEOPLE_ETL_PIPELINE)
 
     mock_conn.execute.assert_called()
 
@@ -173,7 +156,7 @@ def test_duck_lake_base_replication_execute_truncate():
     mock_conn.execute.return_value.fetchone.return_value = [10]
 
     strategy = DuckLakeFullReplicationStrategy(mock_conn, "staging")
-    strategy.execute_truncate(TEST_PEOPLE_PIPELINE)
+    strategy.execute_truncate(PEOPLE_ETL_PIPELINE)
 
     mock_conn.execute.assert_called()
 
@@ -184,7 +167,7 @@ def test_duck_lake_incremental_replication_strategy():
     mock_conn.execute.return_value.fetchone.return_value = [3]
 
     strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
-    strategy.replicate(TEST_PEOPLE_PIPELINE)
+    strategy.replicate(PEOPLE_ETL_PIPELINE)
 
     # Should call both delete and insert
     assert mock_conn.execute.call_count >= 2
@@ -205,7 +188,7 @@ def test_duck_lake_loader_transaction_rollback():
     loader = DuckLakeLoader(mock_conn)
     df = pl.DataFrame({"id": [1], "name": ["test"]})
 
-    loader.load(df, TEST_PEOPLE_PIPELINE)
+    loader.load(df, PEOPLE_ETL_PIPELINE)
 
     mock_conn.begin.assert_called_once()
     mock_conn.rollback.assert_called_once()
@@ -217,7 +200,7 @@ def test_duck_lake_loader_unknown_replication_type():
     loader = DuckLakeLoader(mock_conn)
 
     # Create pipeline with invalid replication type
-    invalid_pipeline = copy(TEST_PEOPLE_PIPELINE)
+    invalid_pipeline = PEOPLE_ETL_PIPELINE.model_copy()
     invalid_pipeline.replication = "unknown"
 
     with pytest.raises(UnknownReplicationStrategy):

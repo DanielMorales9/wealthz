@@ -11,7 +11,6 @@ from google.auth.credentials import Credentials
 from polars import DataFrame
 
 from wealthz.fetchers import DuckLakeFetcher, GoogleSheetFetcher, YFinanceFetcher
-from wealthz.model import ETLPipeline
 
 
 @pytest.fixture()
@@ -31,7 +30,7 @@ def test_dataframe():
     "pipeline, data, expected",
     [
         (
-            ETLPipeline(**GSHEET_ETL_PIPELINE),
+            GSHEET_ETL_PIPELINE,
             {
                 "values": [["column1", "column2"], ["value1", "123"], ["value2", "456"]],
             },
@@ -59,7 +58,7 @@ def test_google_sheet_fetcher(pipeline, data, expected, mock_gsheet):
 
 def test_google_sheet_fetcher_returns_only_string_columns(mock_gsheet):
     """Test that GoogleSheetFetcher returns dataframe with only string columns"""
-    pipeline = ETLPipeline(**GSHEET_ETL_PIPELINE)
+    pipeline = GSHEET_ETL_PIPELINE
     data = {
         "values": [["column1", "column2"], ["text_value", "123"], ["another_text", "456"]],
     }
@@ -88,13 +87,7 @@ def mock_duckdb_conn():
     return mock_conn
 
 
-@pytest.fixture()
-def ducklake_pipeline():
-    """Create a DuckLake ETL pipeline for testing."""
-    return ETLPipeline(**DUCKLAKE_ETL_PIPELINE)
-
-
-def test_ducklake_fetcher_fetch_success(mock_duckdb_conn, ducklake_pipeline):
+def test_ducklake_fetcher_fetch_success(mock_duckdb_conn):
     """Test successful data fetching from DuckLakeFetcher."""
     # Setup mock return data
     expected_df = DataFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "amount": [100.0, 200.0, 300.0]})
@@ -106,7 +99,7 @@ def test_ducklake_fetcher_fetch_success(mock_duckdb_conn, ducklake_pipeline):
 
     # Create fetcher and test
     fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(ducklake_pipeline)
+    result = fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
 
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
@@ -116,7 +109,7 @@ def test_ducklake_fetcher_fetch_success(mock_duckdb_conn, ducklake_pipeline):
     assert result.equals(expected_df)
 
 
-def test_ducklake_fetcher_fetch_empty_result(mock_duckdb_conn, ducklake_pipeline):
+def test_ducklake_fetcher_fetch_empty_result(mock_duckdb_conn):
     """Test DuckLakeFetcher with empty query result."""
     # Setup mock return empty data
     expected_df = DataFrame(
@@ -131,7 +124,7 @@ def test_ducklake_fetcher_fetch_empty_result(mock_duckdb_conn, ducklake_pipeline
 
     # Create fetcher and test
     fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(ducklake_pipeline)
+    result = fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
 
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
@@ -141,7 +134,7 @@ def test_ducklake_fetcher_fetch_empty_result(mock_duckdb_conn, ducklake_pipeline
     assert result.columns == ["id", "name", "amount"]
 
 
-def test_ducklake_fetcher_query_execution_error(mock_duckdb_conn, ducklake_pipeline):
+def test_ducklake_fetcher_query_execution_error(mock_duckdb_conn):
     """Test DuckLakeFetcher handling of query execution errors."""
     # Setup mock to raise exception
     mock_duckdb_conn.execute.side_effect = duckdb.Error("Table 'test_table' not found")
@@ -151,14 +144,14 @@ def test_ducklake_fetcher_query_execution_error(mock_duckdb_conn, ducklake_pipel
 
     # Verify exception is raised
     with pytest.raises(duckdb.Error, match="Table 'test_table' not found"):
-        fetcher.fetch(ducklake_pipeline)
+        fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
 
     # Verify the query was attempted
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
 
 
 @patch("wealthz.fetchers.logging")
-def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pipeline, test_dataframe):
+def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, test_dataframe):
     """Test that DuckLakeFetcher logs the query being executed."""
     # Setup mock return data
     expected_df = test_dataframe
@@ -168,7 +161,7 @@ def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pi
 
     # Create fetcher and test
     fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    fetcher.fetch(ducklake_pipeline)
+    fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
 
     # Verify logging calls
     mock_logging.info.assert_called_with("Fetching data from DuckDB...")
@@ -176,7 +169,7 @@ def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, ducklake_pi
 
 
 @patch("wealthz.fetchers.logger")
-def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, ducklake_pipeline, test_dataframe):
+def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, test_dataframe):
     """Test that DuckLakeFetcher logs query details."""
     # Setup mock return data
     expected_df = test_dataframe
@@ -186,7 +179,7 @@ def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, duck
 
     # Create fetcher and test
     fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    fetcher.fetch(ducklake_pipeline)
+    fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
 
     # Verify query details are logged
     mock_logger.info.assert_called_with("Query: %s", "SELECT id, name, amount FROM test_table")
@@ -195,9 +188,8 @@ def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, duck
 def test_ducklake_fetcher_different_query(mock_duckdb_conn):
     """Test DuckLakeFetcher with a different query."""
     # Create pipeline with different query
-    pipeline_config = DUCKLAKE_ETL_PIPELINE.copy()
-    pipeline_config["datasource"]["query"] = "SELECT * FROM users WHERE active = true"
-    pipeline = ETLPipeline(**pipeline_config)
+    pipeline = DUCKLAKE_ETL_PIPELINE.model_copy()
+    pipeline.datasource.query = "SELECT * FROM users WHERE active = true"
 
     # Setup mock return data
     expected_df = DataFrame({"id": [1], "name": ["active_user"], "amount": [50.0]})
@@ -230,9 +222,8 @@ def test_ducklake_fetcher_different_query(mock_duckdb_conn):
 def test_ducklake_fetcher_various_queries(mock_duckdb_conn, query, expected_data):
     """Test DuckLakeFetcher with various query types."""
     # Create pipeline with custom query
-    pipeline_config = DUCKLAKE_ETL_PIPELINE.copy()
-    pipeline_config["datasource"]["query"] = query
-    pipeline = ETLPipeline(**pipeline_config)
+    pipeline = DUCKLAKE_ETL_PIPELINE.model_copy()
+    pipeline.datasource.query = query
 
     # Setup mock return data
     mock_result = MagicMock()
@@ -251,7 +242,7 @@ def test_ducklake_fetcher_various_queries(mock_duckdb_conn, query, expected_data
 @pytest.fixture()
 def ticker_pipeline():
     """Create a Ticker ETL pipeline for testing."""
-    return ETLPipeline(**YFINANCE_ETL_PIPELINE)
+    return YFINANCE_ETL_PIPELINE
 
 
 @patch("wealthz.fetchers.yf")

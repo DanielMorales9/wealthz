@@ -1,0 +1,16 @@
+engine:
+  type: duckdb
+name: people
+columns:
+  - name: id
+    type: integer
+  - name: name
+    type: string
+datasource:
+  type: gsheet
+  sheet_id: test-id
+  sheet_range: test-sheet-range
+  credentials_file: mock-creds.json
+primary_keys:
+  - id
+replication: full

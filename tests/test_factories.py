@@ -10,12 +10,11 @@ from wealthz.factories import (
     GoogleSheetFetcherFactory,
 )
 from wealthz.fetchers import GoogleSheetFetcher
-from wealthz.model import ETLPipeline
 
 
 @patch("wealthz.factories.Credentials.from_service_account_file")
 def test_gsheet_fetcher_factory(_):
-    factory = GoogleSheetFetcherFactory(ETLPipeline(**GSHEET_ETL_PIPELINE))
+    factory = GoogleSheetFetcherFactory(GSHEET_ETL_PIPELINE)
     assert isinstance(factory.create(), GoogleSheetFetcher)
 
 
