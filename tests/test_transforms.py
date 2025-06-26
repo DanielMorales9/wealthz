@@ -15,7 +15,7 @@ from wealthz.model import (
 )
 from wealthz.transforms import (
     CastColumnTransform,
-    ColumnTransformEngine,
+    ColumnTransformer,
     LowerColumnTransform,
     RegexReplaceColumnTransform,
     SplitColumnTransform,
@@ -105,15 +105,6 @@ def test_substring_transform():
 
 
 def test_apply_transforms_simple():
-    engine = ColumnTransformEngine()
-
-    # Create test data
-    df = pl.DataFrame({
-        "name": ["  john  ", "  JANE  ", "  bob  "],
-        "age": ["25", "30", "35"],
-        "city": ["new york", "los angeles", "chicago"],
-    })
-
     # Define columns with transforms
     columns = [
         Column(
@@ -140,8 +131,17 @@ def test_apply_transforms_simple():
         ),
     ]
 
+    engine = ColumnTransformer(columns)
+
+    # Create test data
+    df = pl.DataFrame({
+        "name": ["  john  ", "  JANE  ", "  bob  "],
+        "age": ["25", "30", "35"],
+        "city": ["new york", "los angeles", "chicago"],
+    })
+
     # Apply transforms
-    result = engine.apply(df, columns)
+    result = engine.transform(df)
 
     # Verify results
     assert result["name"].to_list() == ["JOHN", "JANE", "BOB"]
@@ -151,29 +151,24 @@ def test_apply_transforms_simple():
 
 
 def test_apply_transforms_with_missing_columns():
-    engine = ColumnTransformEngine()
-
-    # Create test data
-    df = pl.DataFrame({"existing": ["test"]})
-
     # Define columns including non-existent one
     columns = [
         Column(name="existing", type=ColumnType.STRING, transforms=[UpperTransform()]),
         Column(name="missing", type=ColumnType.STRING, transforms=[UpperTransform()]),
     ]
 
+    engine = ColumnTransformer(columns)
+
+    # Create test data
+    df = pl.DataFrame({"existing": ["test"]})
+
     with pytest.raises(ColumnNotFoundError, match="missing"):
-        result = engine.apply(df, columns)
+        result = engine.transform(df)
         assert result["existing"].to_list() == ["TEST"]
         assert "missing" not in result.columns
 
 
 def test_apply_transforms_order():
-    engine = ColumnTransformEngine()
-
-    # Create test data
-    df = pl.DataFrame({"test": ["  hello,world  "]})
-
     # Define columns with transforms in specific order
     columns = [
         Column(
@@ -187,8 +182,13 @@ def test_apply_transforms_order():
         ),
     ]
 
+    engine = ColumnTransformer(columns)
+
+    # Create test data
+    df = pl.DataFrame({"test": ["  hello,world  "]})
+
     # Apply transforms
-    result = engine.apply(df, columns)
+    result = engine.transform(df)
 
     # Should be: trim -> upper -> split
     # "  hello,world  " -> "hello,world" -> "HELLO,WORLD" -> "HELLO"
@@ -196,11 +196,6 @@ def test_apply_transforms_order():
 
 
 def test_transform_error_handling():
-    engine = ColumnTransformEngine()
-
-    # Create test data
-    df = pl.DataFrame({"test": ["invalid"]})
-
     # Define columns with invalid transform
     columns = [
         Column(
@@ -212,37 +207,42 @@ def test_transform_error_handling():
         ),
     ]
 
+    engine = ColumnTransformer(columns)
+
+    # Create test data
+    df = pl.DataFrame({"test": ["invalid"]})
+
     # Should raise TransformError
     with pytest.raises(
         InvalidOperationError, match="conversion from `str` to `i32` failed in column 'test' for 1 out of 1 values:"
     ):
-        engine.apply(df, columns)
+        engine.transform(df)
 
 
 def test_no_transforms():
-    engine = ColumnTransformEngine()
+    # Define columns without transforms
+    columns = [Column(name="test", type=ColumnType.STRING, transforms=[])]
+
+    engine = ColumnTransformer(columns)
 
     # Create test data
     df = pl.DataFrame({"test": ["hello", "world"]})
 
-    # Define columns without transforms
-    columns = [Column(name="test", type=ColumnType.STRING, transforms=[])]
-
     # Apply transforms
-    result = engine.apply(df, columns)
+    result = engine.transform(df)
 
     # Should be unchanged
     assert result.equals(df)
 
 
 def test_empty_columns():
-    engine = ColumnTransformEngine()
+    engine = ColumnTransformer([])
 
     # Create test data
     df = pl.DataFrame({"test": ["hello", "world"]})
 
     # Apply transforms with empty columns list
-    result = engine.apply(df, [])
+    result = engine.transform(df)
 
     # Should be unchanged
     assert result.equals(df)
@@ -250,18 +250,6 @@ def test_empty_columns():
 
 def test_financial_data_transforms():
     """Test transforms on financial transaction data."""
-    engine = ColumnTransformEngine()
-
-    # Create sample financial data
-    df = pl.DataFrame({
-        "Date": ["1/15/2024", "2/20/2024", "3/10/2024"],
-        "Symbol": ["  AAPL  ", "  googl  ", "  MSFT  "],
-        "Quantity": ["100", "50", "200"],
-        "Price": ["$150.50", "$2,800.00", "$400.25"],
-        "Type": ["BUY", "SELL", "BUY"],
-        "Fees": ["$9.1", "N/A", "$12.50"],
-    })
-
     # Define comprehensive transforms
     columns = [
         Column(
@@ -309,9 +297,20 @@ def test_financial_data_transforms():
             ],
         ),
     ]
+    engine = ColumnTransformer(columns)
+
+    # Create sample financial data
+    df = pl.DataFrame({
+        "Date": ["1/15/2024", "2/20/2024", "3/10/2024"],
+        "Symbol": ["  AAPL  ", "  googl  ", "  MSFT  "],
+        "Quantity": ["100", "50", "200"],
+        "Price": ["$150.50", "$2,800.00", "$400.25"],
+        "Type": ["BUY", "SELL", "BUY"],
+        "Fees": ["$9.1", "N/A", "$12.50"],
+    })
 
     # Apply transforms
-    result = engine.apply(df, columns)
+    result = engine.transform(df)
 
     # Verify results
     assert result["Symbol"].to_list() == ["AAPL", "GOOGL", "MSFT"]

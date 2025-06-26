@@ -1,5 +1,6 @@
 """Column-level transform engine for ETL pipeline."""
 
+import abc
 from abc import ABC, abstractmethod
 from typing import ClassVar, cast
 
@@ -111,7 +112,18 @@ class UnknownColumnTransformError(ValueError):
         super().__init__(f"Unknown transform type: {transform_type}")
 
 
-class ColumnTransformEngine:
+class Transformer(ABC):
+    @abc.abstractmethod
+    def transform(self, df: pl.DataFrame) -> pl.DataFrame:
+        pass
+
+
+class NoopTransformer(Transformer):
+    def transform(self, df: pl.DataFrame) -> pl.DataFrame:
+        return df
+
+
+class ColumnTransformer(Transformer):
     """Engine for applying column-level transforms to DataFrames."""
 
     COLUMN_TRANSFORM_MAP: ClassVar[dict[str, ColumnTransform]] = {
@@ -125,14 +137,17 @@ class ColumnTransformEngine:
         TransformType.DATE_FORMAT: DateFormatColumnTransform(),
     }
 
-    def apply(self, df: pl.DataFrame, columns: list[Column]) -> pl.DataFrame:
+    def __init__(self, columns: list[Column]) -> None:
+        self._columns = columns
+
+    def transform(self, df: pl.DataFrame) -> pl.DataFrame:
         """Apply all column-level transforms to a DataFrame."""
-        if not columns:
+        if not self._columns:
             return df
 
         # Build column expressions with transforms
         expressions = []
-        for column in columns:
+        for column in self._columns:
             expr = self.build_column_expression(column)
             expressions.append(expr)
 

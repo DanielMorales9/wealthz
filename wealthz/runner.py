@@ -3,7 +3,7 @@ from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaS
 from wealthz.logutils import get_logger
 from wealthz.model import ETLPipeline
 from wealthz.settings import DuckLakeSettings
-from wealthz.transforms import ColumnTransformEngine
+from wealthz.transforms import ColumnTransformer
 
 logger = get_logger(__name__)
 
@@ -37,8 +37,8 @@ class PipelineRunner:
             # Apply transforms if configured
             if pipeline.has_transforms:
                 logger.info("Applying column transforms")
-                transform_engine = ColumnTransformEngine()
-                df = transform_engine.apply(df, pipeline.columns)
+                transformer = ColumnTransformer(pipeline.columns)
+                df = transformer.transform(df)
                 logger.info("Transform application completed")
 
             # Load data
