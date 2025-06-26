@@ -9,6 +9,7 @@ from wealthz.constants import SECRETS_DIR
 from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher, YFinanceFetcher
 from wealthz.generics import T
 from wealthz.model import DatasourceType, ETLPipeline, GoogleSheetDatasource
+from wealthz.transforms import ColumnTransformer, NoopTransformer, Transformer
 
 SPREADSHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -65,3 +66,14 @@ class FetcherFactory(Factory[Fetcher]):
             return YFinanceFetcher()
         else:
             raise UnknownDataSourceTypeError(datasource_type)
+
+
+class TransformerFactory(Factory[Transformer]):
+    def __init__(self, pipeline: ETLPipeline) -> None:
+        self._pipeline = pipeline
+
+    def create(self) -> Transformer:
+        if self._pipeline.has_transforms:
+            return ColumnTransformer(self._pipeline.columns)
+        else:
+            return NoopTransformer()

@@ -1,9 +1,8 @@
-from wealthz.factories import FetcherFactory
+from wealthz.factories import FetcherFactory, TransformerFactory
 from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
 from wealthz.logutils import get_logger
 from wealthz.model import ETLPipeline
 from wealthz.settings import DuckLakeSettings
-from wealthz.transforms import ColumnTransformer
 
 logger = get_logger(__name__)
 
@@ -35,11 +34,9 @@ class PipelineRunner:
             logger.info(f"Fetched {len(df)} rows")
 
             # Apply transforms if configured
-            if pipeline.has_transforms:
-                logger.info("Applying column transforms")
-                transformer = ColumnTransformer(pipeline.columns)
-                df = transformer.transform(df)
-                logger.info("Transform application completed")
+            transformer = TransformerFactory(pipeline).create()
+            df = transformer.transform(df)
+            logger.info("Transform application completed")
 
             # Load data
             logger.info(f"Loading {len(df)} rows to {pipeline.name}")
