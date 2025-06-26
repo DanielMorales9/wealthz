@@ -1,5 +1,3 @@
-engine:
-  type: duckdb
 name: test_ducklake
 columns:
   - name: id
