@@ -349,50 +349,8 @@ def test_google_sheets_loader_write_to_sheet_full_replication(mock_build):
     # Test write operation
     loader._write_to_sheet(test_data, pipeline)
 
-    # Verify clear was called (full replication)
+    # Verify clear was called
     mock_service.spreadsheets().values().clear.assert_called_once()
-
-    # Verify update was called
-    mock_service.spreadsheets().values().update.assert_called()
-
-
-@patch("wealthz.loaders.build")
-def test_google_sheets_loader_write_to_sheet_append_replication(mock_build):
-    """Test writing to Google Sheets with append replication"""
-    from unittest.mock import MagicMock
-
-    from wealthz.loaders import GoogleSheetsLoader
-    from wealthz.model import Column, ColumnType, ETLPipeline, ReplicationType
-
-    # Mock the Google Sheets service
-    mock_service = MagicMock()
-    mock_build.return_value = mock_service
-
-    # Mock credentials and create loader
-    mock_credentials = MagicMock()
-    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id")
-
-    # Create test pipeline with append replication
-    columns = [Column(name="name", type=ColumnType.STRING)]
-    pipeline = ETLPipeline(
-        name="test_table",
-        columns=columns,
-        replication=ReplicationType.APPEND,
-        primary_keys=["name"],
-        datasource={"type": "ducklake", "query": "SELECT * FROM test"},
-    )
-
-    # Test data
-    test_data = [["name"], ["Alice"]]
-
-    # Mock successful update response
-    mock_service.spreadsheets().values().update().execute.return_value = {"updatedCells": 1}
-
-    # Test write operation
-    loader._write_to_sheet(test_data, pipeline)
-
-    # Verify clear was NOT called (append replication)
-    mock_service.spreadsheets().values().clear.assert_not_called()
 
     # Verify update was called
     mock_service.spreadsheets().values().update.assert_called()

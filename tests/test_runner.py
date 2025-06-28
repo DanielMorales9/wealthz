@@ -159,7 +159,7 @@ def test_run_pipeline_success(
     mock_conn_manager.provision.assert_called_once()
     mock_syncer.sync.assert_called_once_with(mock_pipeline)
     mock_fetcher_factory_class.assert_called_once_with(mock_pipeline, mock_conn)
-    mock_fetcher.fetch.assert_called_once_with(mock_pipeline)
+    mock_fetcher.fetch.assert_called_once()
     mock_transformer_factory_class.assert_called_once_with(mock_pipeline)
     mock_transformer.transform.assert_called_once_with(mock_test_df)
     mock_loader_factory_class.create.called_once()

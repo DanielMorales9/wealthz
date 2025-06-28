@@ -30,7 +30,7 @@ class PipelineRunner:
             logger.info(f"Fetching data from {pipeline.datasource.type} datasource")
             fetcher_factory = FetcherFactory(pipeline, conn)
             fetcher = fetcher_factory.create()
-            df = fetcher.fetch(pipeline)
+            df = fetcher.fetch()
 
             logger.info(f"Fetched {len(df)} rows")
 

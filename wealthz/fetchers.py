@@ -20,22 +20,23 @@ logger = get_logger(__name__)
 
 class Fetcher(ABC):
     @abc.abstractmethod
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame: ...
+    def fetch(self) -> DataFrame: ...
 
 
 class GoogleSheetFetcher(Fetcher):
-    def __init__(self, credentials: Credentials) -> None:
+    def __init__(self, pipeline: ETLPipeline, credentials: Credentials) -> None:
+        self._pipeline = pipeline
         service = build("sheets", "v4", credentials=credentials)
         self._sheet_client = service.spreadsheets()
 
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame:
+    def fetch(self) -> DataFrame:
         # Fetch the sheet data
         logger.info("Fetching data from Google Sheet")
-        datasource = cast(GoogleSheetDatasource, pipeline.datasource)
+        datasource = cast(GoogleSheetDatasource, self._pipeline.datasource)
         sheet_values = self._sheet_client.values()
         result = sheet_values.get(spreadsheetId=datasource.sheet_id, range=datasource.sheet_range).execute()
         values = result.get("values", [])
-        schema = {col.name: pl.String for col in pipeline.columns}
+        schema = {col.name: pl.String for col in self._pipeline.columns}
         if not values:
             logger.info("No data found in the sheet.")
             return DataFrame(schema=schema)
@@ -50,12 +51,13 @@ class GoogleSheetFetcher(Fetcher):
 
 
 class DuckLakeFetcher(Fetcher):
-    def __init__(self, conn: duckdb.DuckDBPyConnection):
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection):
+        self._pipeline = pipeline
         self.conn = conn
 
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame:
+    def fetch(self) -> DataFrame:
         logging.info("Fetching data from DuckDB...")
-        datasource = cast(DuckLakeDatasource, pipeline.datasource)
+        datasource = cast(DuckLakeDatasource, self._pipeline.datasource)
         logger.info("Query: %s", datasource.query)
         return self.conn.execute(datasource.query).pl()
 
@@ -63,9 +65,12 @@ class DuckLakeFetcher(Fetcher):
 class YFinanceFetcher(Fetcher):
     SYMBOL_COLUMN = "Symbol"
 
-    def fetch(self, pipeline: ETLPipeline) -> DataFrame:
+    def __init__(self, pipeline: ETLPipeline) -> None:
+        self._pipeline = pipeline
+
+    def fetch(self) -> DataFrame:
         logger.info("Fetching Yahoo Finance data...")
-        datasource = cast(YFinanceDatasource, pipeline.datasource)
+        datasource = cast(YFinanceDatasource, self._pipeline.datasource)
 
         dataframes = []
         for symbol in datasource.symbols:

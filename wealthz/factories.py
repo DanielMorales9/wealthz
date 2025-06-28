@@ -102,7 +102,7 @@ class FetcherFactory(Factory[Fetcher]):
             gsheet_datasource.credentials_file, scope=GoogleCredentialsScope.SPREADSHEETS
         )
         credentials = creds_factory.create()
-        return GoogleSheetFetcher(credentials)
+        return GoogleSheetFetcher(self._pipeline, credentials)
 
     def create(self) -> Fetcher:
         """Create fetcher based on datasource type."""
@@ -110,9 +110,9 @@ class FetcherFactory(Factory[Fetcher]):
         if datasource_type == DatasourceType.GOOGLE_SHEET:
             return self.create_gsheet_datasource()
         elif datasource_type == DatasourceType.DUCKLAKE:
-            return DuckLakeFetcher(self._conn)
+            return DuckLakeFetcher(self._pipeline, self._conn)
         elif datasource_type == DatasourceType.YFINANCE:
-            return YFinanceFetcher()
+            return YFinanceFetcher(self._pipeline)
         else:
             raise UnknownDataSourceTypeError(datasource_type)
 

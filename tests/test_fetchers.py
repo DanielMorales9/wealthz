@@ -50,8 +50,8 @@ def test_dataframe():
 def test_google_sheet_fetcher(pipeline, data, expected, mock_gsheet):
     mock_gsheet.values.return_value.get.return_value.execute.return_value = data
     mock_credentials = MagicMock(spec=Credentials)
-    fetcher = GoogleSheetFetcher(mock_credentials)
-    actual = fetcher.fetch(pipeline)
+    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
+    actual = fetcher.fetch()
     assert not actual.is_empty()
     assert actual.equals(expected)
 
@@ -65,9 +65,9 @@ def test_google_sheet_fetcher_returns_only_string_columns(mock_gsheet):
 
     mock_gsheet.values.return_value.get.return_value.execute.return_value = data
     mock_credentials = MagicMock(spec=Credentials)
-    fetcher = GoogleSheetFetcher(mock_credentials)
+    fetcher = GoogleSheetFetcher(pipeline, mock_credentials)
 
-    df = fetcher.fetch(pipeline)
+    df = fetcher.fetch()
 
     # Verify all columns are strings
     for column_name in df.columns:
@@ -98,8 +98,8 @@ def test_ducklake_fetcher_fetch_success(mock_duckdb_conn):
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
+    fetcher = DuckLakeFetcher(DUCKLAKE_ETL_PIPELINE, mock_duckdb_conn)
+    result = fetcher.fetch()
 
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
@@ -123,8 +123,8 @@ def test_ducklake_fetcher_fetch_empty_result(mock_duckdb_conn):
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
+    fetcher = DuckLakeFetcher(DUCKLAKE_ETL_PIPELINE, mock_duckdb_conn)
+    result = fetcher.fetch()
 
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
@@ -140,11 +140,11 @@ def test_ducklake_fetcher_query_execution_error(mock_duckdb_conn):
     mock_duckdb_conn.execute.side_effect = duckdb.Error("Table 'test_table' not found")
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
+    fetcher = DuckLakeFetcher(DUCKLAKE_ETL_PIPELINE, mock_duckdb_conn)
 
     # Verify exception is raised
     with pytest.raises(duckdb.Error, match="Table 'test_table' not found"):
-        fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
+        fetcher.fetch()
 
     # Verify the query was attempted
     mock_duckdb_conn.execute.assert_called_once_with("SELECT id, name, amount FROM test_table")
@@ -160,8 +160,8 @@ def test_ducklake_fetcher_logs_query(mock_logging, mock_duckdb_conn, test_datafr
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
+    fetcher = DuckLakeFetcher(DUCKLAKE_ETL_PIPELINE, mock_duckdb_conn)
+    fetcher.fetch()
 
     # Verify logging calls
     mock_logging.info.assert_called_with("Fetching data from DuckDB...")
@@ -178,8 +178,8 @@ def test_ducklake_fetcher_logs_query_details(mock_logger, mock_duckdb_conn, test
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    fetcher.fetch(DUCKLAKE_ETL_PIPELINE)
+    fetcher = DuckLakeFetcher(DUCKLAKE_ETL_PIPELINE, mock_duckdb_conn)
+    fetcher.fetch()
 
     # Verify query details are logged
     mock_logger.info.assert_called_with("Query: %s", "SELECT id, name, amount FROM test_table")
@@ -198,8 +198,8 @@ def test_ducklake_fetcher_different_query(mock_duckdb_conn):
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(pipeline)
+    fetcher = DuckLakeFetcher(pipeline, mock_duckdb_conn)
+    result = fetcher.fetch()
 
     # Verify the correct query was executed
     mock_duckdb_conn.execute.assert_called_once_with("SELECT * FROM users WHERE active = true")
@@ -231,8 +231,8 @@ def test_ducklake_fetcher_various_queries(mock_duckdb_conn, query, expected_data
     mock_duckdb_conn.execute.return_value = mock_result
 
     # Create fetcher and test
-    fetcher = DuckLakeFetcher(mock_duckdb_conn)
-    result = fetcher.fetch(pipeline)
+    fetcher = DuckLakeFetcher(pipeline, mock_duckdb_conn)
+    result = fetcher.fetch()
 
     # Verify the query was executed
     mock_duckdb_conn.execute.assert_called_once_with(query)
@@ -252,10 +252,10 @@ def test_yfinance_fetcher_retrieves_data(mock_yfinance, ticker_pipeline, test_da
         data={"id": [1], "name": ["test"], "amount": [100.0]},
         index=[datetime(2024, 1, 1, 2, 0, 0, tzinfo=pytz.timezone("CET"))],
     )
-    fetcher = YFinanceFetcher()
+    fetcher = YFinanceFetcher(ticker_pipeline)
     mock_yfinance.Ticker.return_value = mock_yticker = MagicMock()
     mock_yticker.history.return_value = expected_df
-    expected_df = fetcher.fetch(ticker_pipeline)
+    expected_df = fetcher.fetch()
 
     assert mock_yfinance.Ticker.called
     assert mock_yticker.history.called
