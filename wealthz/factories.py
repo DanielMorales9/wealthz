@@ -8,10 +8,12 @@ from google.oauth2.service_account import Credentials
 from wealthz.constants import SECRETS_DIR
 from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher, YFinanceFetcher
 from wealthz.generics import T
-from wealthz.model import DatasourceType, ETLPipeline, GoogleSheetDatasource
+from wealthz.loaders import DuckLakeLoader, GoogleSheetsLoader, Loader
+from wealthz.model import DatasourceType, DestinationType, ETLPipeline, GoogleSheetDatasource, GoogleSheetDestination
 from wealthz.transforms import ColumnTransformer, NoopTransformer, Transformer
 
 SPREADSHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SPREADSHEETS_WRITE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 class Factory(ABC, Generic[T]):
@@ -22,6 +24,7 @@ class Factory(ABC, Generic[T]):
 
 class GoogleCredentialsScope(StrEnum):
     SPREADSHEETS = "spreadsheets"
+    SPREADSHEETS_WRITE = "spreadsheets_write"
 
 
 class GoogleCredentialsFactory(Factory[Credentials]):
@@ -30,6 +33,8 @@ class GoogleCredentialsFactory(Factory[Credentials]):
         self._scopes = []
         if scope == GoogleCredentialsScope.SPREADSHEETS:
             self._scopes = SPREADSHEETS_SCOPES
+        elif scope == GoogleCredentialsScope.SPREADSHEETS_WRITE:
+            self._scopes = SPREADSHEETS_WRITE_SCOPES
 
     def create(self) -> Credentials:
         return Credentials.from_service_account_file(self._credentials_path, scopes=self._scopes)  # type: ignore[no-any-return]
@@ -38,6 +43,50 @@ class GoogleCredentialsFactory(Factory[Credentials]):
 class UnknownDataSourceTypeError(ValueError):
     def __init__(self, source_type: DatasourceType):
         super().__init__(f"Unknown datasource type: {source_type}")
+
+
+class GoogleSheetsLoaderFactory(Factory[GoogleSheetsLoader]):
+    def __init__(self, sheet_id: str, credentials_file_name: str, sheet_range: str | None = None):
+        self.sheet_id = sheet_id
+        self.sheet_range = sheet_range
+        self._credentials_file_name = credentials_file_name
+
+    def create(self) -> GoogleSheetsLoader:
+        creds_manager = GoogleCredentialsFactory(
+            self._credentials_file_name, scope=GoogleCredentialsScope.SPREADSHEETS_WRITE
+        )
+        credentials = creds_manager.create()
+        return GoogleSheetsLoader(credentials, self.sheet_id, self.sheet_range)
+
+
+class UnknownDestinationTypeError(ValueError):
+    def __init__(self, destination_type: DestinationType):
+        super().__init__(f"Unknown destination type: {destination_type}")
+
+
+class LoaderFactory(Factory[Loader]):
+    """Factory for creating appropriate loader based on destination type."""
+
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection) -> None:
+        self._pipeline = pipeline
+        self._conn = conn
+
+    def create(self) -> Loader:
+        """Create loader based on destination type."""
+        if self._pipeline.destination is None:
+            return DuckLakeLoader(self._conn)
+        elif self._pipeline.destination.type == DestinationType.GOOGLE_SHEET:
+            destination = cast(GoogleSheetDestination, self._pipeline.destination)
+            factory = GoogleSheetsLoaderFactory(
+                sheet_id=destination.sheet_id,
+                credentials_file_name=destination.credentials_file,
+                sheet_range=destination.sheet_range,
+            )
+            return factory.create()
+        elif self._pipeline.destination.type == DestinationType.DUCKLAKE:
+            return DuckLakeLoader(self._conn)
+        else:
+            raise UnknownDestinationTypeError(self._pipeline.destination.type)
 
 
 class FetcherFactory(Factory[Fetcher]):

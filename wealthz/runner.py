@@ -1,5 +1,5 @@
-from wealthz.factories import FetcherFactory, TransformerFactory
-from wealthz.loaders import DuckLakeConnManager, DuckLakeLoader, DuckLakeSchemaSyncer
+from wealthz.factories import FetcherFactory, LoaderFactory, TransformerFactory
+from wealthz.loaders import DuckLakeConnManager, DuckLakeSchemaSyncer
 from wealthz.logutils import get_logger
 from wealthz.model import ETLPipeline
 from wealthz.settings import DuckLakeSettings
@@ -28,19 +28,21 @@ class PipelineRunner:
 
             # Create fetcher and fetch data
             logger.info(f"Fetching data from {pipeline.datasource.type} datasource")
-            fetcher = FetcherFactory(pipeline, conn).create()
+            fetcher_factory = FetcherFactory(pipeline, conn)
+            fetcher = fetcher_factory.create()
             df = fetcher.fetch(pipeline)
 
             logger.info(f"Fetched {len(df)} rows")
 
             # Apply transforms if configured
-            transformer = TransformerFactory(pipeline).create()
+            transformer_factory = TransformerFactory(pipeline)
+            transformer = transformer_factory.create()
             df = transformer.transform(df)
             logger.info("Transform application completed")
 
             # Load data
-            logger.info(f"Loading {len(df)} rows to {pipeline.name}")
-            loader = DuckLakeLoader(conn)
+            loader_factory = LoaderFactory(pipeline, conn)
+            loader = loader_factory.create()
             loader.load(df, pipeline)
             logger.info("Data loading completed")
 

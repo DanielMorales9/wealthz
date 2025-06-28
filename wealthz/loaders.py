@@ -7,6 +7,8 @@ from typing import Any, ClassVar, Generic, Optional
 
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 from polars import DataFrame
 
 from wealthz.generics import T
@@ -61,9 +63,9 @@ class DuckLakeSchemaSyncer:
 class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
     INSERT_TPL_STMT = "INSERT INTO $table_name ($columns) SELECT $columns FROM $staging_table_name;"
     TRUNCATE_TPL_STMT = "TRUNCATE TABLE $table_name;"
-    DELETE_TPL_STMT = """DELETE \
-                         FROM $table_name
-                         WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
+    DELETE_TPL_STMT = (
+        """DELETE FROM $table_name WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
+    )
 
     def __init__(self, conn: duckdb.DuckDBPyConnection, staging_table_name: str):
         self.conn = conn
@@ -269,3 +271,59 @@ class DuckLakeConnManager:
             self.configure_storage()
             self.configure_catalog()
             return self._conn
+
+
+class GoogleSheetsLoader(Loader):
+    def __init__(self, credentials: Credentials, sheet_id: str, sheet_range: str | None = None):
+        self.credentials = credentials
+        self.sheet_id = sheet_id
+        self.sheet_range = sheet_range
+        self.service = build("sheets", "v4", credentials=credentials)
+
+    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+        try:
+            data = self._dataframe_to_sheets_data(df, pipeline)
+            self._write_to_sheet(data, pipeline)
+            logger.info("Successfully loaded %d rows to Google Sheet", len(data) - 1)
+        except Exception:
+            logger.exception("Failed to load data to Google Sheet")
+            raise
+
+    @staticmethod
+    def _dataframe_to_sheets_data(df: DataFrame, pipeline: ETLPipeline) -> list[list[Any]]:
+        data = [pipeline.column_names]
+
+        for row in df.rows():
+            formatted_row = []
+            for value in row:
+                if value is None:
+                    formatted_row.append("")
+                else:
+                    formatted_row.append(str(value))
+            data.append(formatted_row)
+
+        return data
+
+    def _write_to_sheet(self, data: list[list[Any]], pipeline: ETLPipeline) -> None:
+        range_name = self.sheet_range or f"{pipeline.name}!A:Z"
+        self._clear_sheet(range_name)
+
+        body = {"values": data}
+
+        result = (
+            self.service.spreadsheets()
+            .values()
+            .update(
+                spreadsheetId=self.sheet_id,
+                range=range_name,
+                valueInputOption="RAW",
+                body=body,
+            )
+            .execute()
+        )
+
+        logger.info("Google Sheets API response: %s", result.get("updatedCells", 0))
+
+    def _clear_sheet(self, range_name: str) -> None:
+        self.service.spreadsheets().values().clear(spreadsheetId=self.sheet_id, range=range_name, body={}).execute()
+        logger.info("Cleared sheet range: %s", range_name)

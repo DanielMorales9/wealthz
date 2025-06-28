@@ -135,6 +135,11 @@ class DatasourceType(StrEnum):
     YFINANCE = "yfinance"
 
 
+class DestinationType(StrEnum):
+    GOOGLE_SHEET = "gsheet"
+    DUCKLAKE = "ducklake"
+
+
 class GoogleSheetDatasource(BaseModel):
     type: Literal[DatasourceType.GOOGLE_SHEET] = DatasourceType.GOOGLE_SHEET
     sheet_id: str
@@ -165,17 +170,23 @@ Datasource = Annotated[
 ]
 
 
-class EngineType(StrEnum):
-    DUCKDB = "duckdb"
+class GoogleSheetDestination(BaseModel):
+    type: Literal[DestinationType.GOOGLE_SHEET] = DestinationType.GOOGLE_SHEET
+    sheet_id: str
+    sheet_range: Optional[str] = None
+    credentials_file: str
 
 
-class Engine(BaseConfig):
-    type: EngineType
+class DuckLakeDestination(BaseModel):
+    type: Literal[DestinationType.DUCKLAKE] = DestinationType.DUCKLAKE
+
+
+Destination = Annotated[Union[GoogleSheetDestination, DuckLakeDestination], Field(discriminator="type")]
 
 
 class ETLPipeline(Table):
-    engine: Engine
     datasource: Datasource
+    destination: Optional[Destination] = None
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> "ETLPipeline":

@@ -5,22 +5,22 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import psycopg2
 import pytest
-from conftest import GSHEET_ETL_PIPELINE
+from conftest import GSHEET_ETL_PIPELINE, PEOPLE_ETL_PIPELINE
 from duckdb.duckdb import DuckDBPyConnection
 from testcontainers.minio import MinioContainer
 from testcontainers.postgres import PostgresContainer
 
-from tests.conftest import PEOPLE_ETL_PIPELINE
 from wealthz.loaders import (
     DuckLakeConnManager,
     DuckLakeFullReplicationStrategy,
     DuckLakeIncrementalReplicationStrategy,
     DuckLakeLoader,
     DuckLakeSchemaSyncer,
+    GoogleSheetsLoader,
     UnknownReplicationStrategy,
     query_build,
 )
-from wealthz.model import ReplicationType
+from wealthz.model import Column, ColumnType, ETLPipeline, ReplicationType
 from wealthz.settings import DuckLakeSettings, PostgresCatalogSettings, StorageSettings
 
 
@@ -282,3 +282,117 @@ def test_replication_strategy_abstract_method():
     # This should raise TypeError since replicate is not implemented
     with pytest.raises(TypeError):
         ReplicationStrategy()
+
+
+def test_google_sheets_loader_dataframe_conversion():
+    """Test converting DataFrame to Google Sheets data format"""
+    # Mock credentials and create loader
+    mock_credentials = MagicMock()
+    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id")
+
+    # Create test data
+    df = pl.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30], "value": [100.5, None]})
+
+    # Create test pipeline
+    columns = [
+        Column(name="name", type=ColumnType.STRING),
+        Column(name="age", type=ColumnType.INTEGER),
+        Column(name="value", type=ColumnType.DOUBLE),
+    ]
+    pipeline = ETLPipeline(
+        name="test_table",
+        columns=columns,
+        replication=ReplicationType.FULL,
+        primary_keys=["name"],
+        datasource={"type": "ducklake", "query": "SELECT * FROM test"},
+    )
+
+    # Test data conversion
+    result = loader._dataframe_to_sheets_data(df, pipeline)
+
+    # Check headers
+    assert result[0] == ["name", "age", "value"]
+
+    # Check data rows
+    assert result[1] == ["Alice", "25", "100.5"]
+    assert result[2] == ["Bob", "30", ""]  # None should be converted to empty string
+
+
+@patch("wealthz.loaders.build")
+def test_google_sheets_loader_write_to_sheet_full_replication(mock_build):
+    """Test writing to Google Sheets with full replication"""
+
+    # Mock the Google Sheets service
+    mock_service = MagicMock()
+    mock_build.return_value = mock_service
+
+    # Mock credentials and create loader
+    mock_credentials = MagicMock()
+    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id", "Sheet1!A1:C10")
+
+    # Create test pipeline
+    columns = [Column(name="name", type=ColumnType.STRING), Column(name="age", type=ColumnType.INTEGER)]
+    pipeline = ETLPipeline(
+        name="test_table",
+        columns=columns,
+        replication=ReplicationType.FULL,
+        primary_keys=["name"],
+        datasource={"type": "ducklake", "query": "SELECT * FROM test"},
+    )
+
+    # Test data
+    test_data = [["name", "age"], ["Alice", "25"]]
+
+    # Mock successful update response
+    mock_service.spreadsheets().values().update().execute.return_value = {"updatedCells": 2}
+
+    # Test write operation
+    loader._write_to_sheet(test_data, pipeline)
+
+    # Verify clear was called (full replication)
+    mock_service.spreadsheets().values().clear.assert_called_once()
+
+    # Verify update was called
+    mock_service.spreadsheets().values().update.assert_called()
+
+
+@patch("wealthz.loaders.build")
+def test_google_sheets_loader_write_to_sheet_append_replication(mock_build):
+    """Test writing to Google Sheets with append replication"""
+    from unittest.mock import MagicMock
+
+    from wealthz.loaders import GoogleSheetsLoader
+    from wealthz.model import Column, ColumnType, ETLPipeline, ReplicationType
+
+    # Mock the Google Sheets service
+    mock_service = MagicMock()
+    mock_build.return_value = mock_service
+
+    # Mock credentials and create loader
+    mock_credentials = MagicMock()
+    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id")
+
+    # Create test pipeline with append replication
+    columns = [Column(name="name", type=ColumnType.STRING)]
+    pipeline = ETLPipeline(
+        name="test_table",
+        columns=columns,
+        replication=ReplicationType.APPEND,
+        primary_keys=["name"],
+        datasource={"type": "ducklake", "query": "SELECT * FROM test"},
+    )
+
+    # Test data
+    test_data = [["name"], ["Alice"]]
+
+    # Mock successful update response
+    mock_service.spreadsheets().values().update().execute.return_value = {"updatedCells": 1}
+
+    # Test write operation
+    loader._write_to_sheet(test_data, pipeline)
+
+    # Verify clear was NOT called (append replication)
+    mock_service.spreadsheets().values().clear.assert_not_called()
+
+    # Verify update was called
+    mock_service.spreadsheets().values().update.assert_called()
