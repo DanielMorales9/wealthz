@@ -97,8 +97,7 @@ class FetcherFactory(Factory[Fetcher]):
             return DuckLakeFetcher(self._pipeline, self._conn)
         elif datasource_type == DatasourceType.YFINANCE:
             return YFinanceFetcher(self._pipeline)
-        else:
-            raise UnknownDataSourceTypeError(datasource_type)
+        raise UnknownDataSourceTypeError(datasource_type)
 
 
 class TransformerFactory(Factory[Transformer]):

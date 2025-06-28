@@ -144,8 +144,8 @@ def test_duck_lake_base_replication_execute_delete_where():
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = [5]
 
-    strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
-    strategy.execute_delete_where(PEOPLE_ETL_PIPELINE)
+    strategy = DuckLakeIncrementalReplicationStrategy(PEOPLE_ETL_PIPELINE, mock_conn, "staging")
+    strategy.execute_delete_where()
 
     mock_conn.execute.assert_called()
 
@@ -155,8 +155,8 @@ def test_duck_lake_base_replication_execute_truncate():
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = [10]
 
-    strategy = DuckLakeFullReplicationStrategy(mock_conn, "staging")
-    strategy.execute_truncate(PEOPLE_ETL_PIPELINE)
+    strategy = DuckLakeFullReplicationStrategy(PEOPLE_ETL_PIPELINE, mock_conn, "staging")
+    strategy.execute_truncate()
 
     mock_conn.execute.assert_called()
 
@@ -166,8 +166,8 @@ def test_duck_lake_incremental_replication_strategy():
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = [3]
 
-    strategy = DuckLakeIncrementalReplicationStrategy(mock_conn, "staging")
-    strategy.replicate(PEOPLE_ETL_PIPELINE)
+    strategy = DuckLakeIncrementalReplicationStrategy(PEOPLE_ETL_PIPELINE, mock_conn, "staging")
+    strategy.replicate()
 
     # Should call both delete and insert
     assert mock_conn.execute.call_count >= 2

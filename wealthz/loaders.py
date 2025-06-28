@@ -26,7 +26,7 @@ class Loader(ABC, Generic[T]):
 
 class ReplicationStrategy(ABC):
     @abc.abstractmethod
-    def replicate(self, pipeline: ETLPipeline) -> None:
+    def replicate(self) -> None:
         pass
 
 
@@ -68,15 +68,16 @@ class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
         """DELETE FROM $table_name WHERE ($primary_keys) IN (SELECT $primary_keys FROM $staging_table_name);"""
     )
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection, staging_table_name: str):
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection, staging_table_name: str):
+        self._pipeline = pipeline
         self.conn = conn
         self.staging_table_name = staging_table_name
 
-    def execute_insert_into(self, pipeline: ETLPipeline) -> None:
+    def execute_insert_into(self) -> None:
         insert_stmt = query_build(
             self.INSERT_TPL_STMT,
-            table_name=pipeline.name,
-            columns=", ".join(pipeline.column_names),
+            table_name=self._pipeline.name,
+            columns=", ".join(self._pipeline.column_names),
             staging_table_name=self.staging_table_name,
         )
         logger.info(insert_stmt)
@@ -84,22 +85,22 @@ class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
         stats = result[0] if result else -1
         logger.info("Number of inserted rows: %s", stats)
 
-    def execute_truncate(self, pipeline: ETLPipeline) -> None:
+    def execute_truncate(self) -> None:
         truncate_stmt = query_build(
             self.TRUNCATE_TPL_STMT,
-            table_name=pipeline.name,
+            table_name=self._pipeline.name,
         )
         logger.info(truncate_stmt)
         result = self.conn.execute(truncate_stmt).fetchone()
         stats = result[0] if result else -1
         logger.info("Number of deleted rows: %s", stats)
 
-    def execute_delete_where(self, pipeline: ETLPipeline) -> None:
+    def execute_delete_where(self) -> None:
         delete_stmt = query_build(
             self.DELETE_TPL_STMT,
-            table_name=pipeline.name,
-            columns=", ".join(pipeline.column_names),
-            primary_keys=", ".join(pipeline.primary_keys),
+            table_name=self._pipeline.name,
+            columns=", ".join(self._pipeline.column_names),
+            primary_keys=", ".join(self._pipeline.primary_keys),
             staging_table_name=self.staging_table_name,
         )
         logger.info(delete_stmt)
@@ -109,20 +110,20 @@ class DuckLakeBaseReplicationStrategy(ReplicationStrategy, ABC):
 
 
 class DuckLakeAppendReplicationStrategy(DuckLakeBaseReplicationStrategy):
-    def replicate(self, pipeline: ETLPipeline) -> None:
-        self.execute_insert_into(pipeline)
+    def replicate(self) -> None:
+        self.execute_insert_into()
 
 
 class DuckLakeFullReplicationStrategy(DuckLakeBaseReplicationStrategy):
-    def replicate(self, pipeline: ETLPipeline) -> None:
-        self.execute_truncate(pipeline)
-        self.execute_insert_into(pipeline)
+    def replicate(self) -> None:
+        self.execute_truncate()
+        self.execute_insert_into()
 
 
 class DuckLakeIncrementalReplicationStrategy(DuckLakeBaseReplicationStrategy):
-    def replicate(self, pipeline: ETLPipeline) -> None:
-        self.execute_delete_where(pipeline)
-        self.execute_insert_into(pipeline)
+    def replicate(self) -> None:
+        self.execute_delete_where()
+        self.execute_insert_into()
 
 
 class UnknownReplicationStrategy(ValueError):
@@ -147,7 +148,7 @@ class DuckLakeLoader(Loader):
             self.conn.begin()
             self.conn.register(self.STAGING_TABLE_NAME, df)
             strategy = self.get_replication_strategy()
-            strategy.replicate(pipeline=self._pipeline)
+            strategy.replicate()
             self.conn.commit()
         except Exception:
             self.conn.rollback()
@@ -157,7 +158,7 @@ class DuckLakeLoader(Loader):
         strategy_class = self.REPLICATION_STRATEGY_MAP.get(self._pipeline.replication)
         if strategy_class is None:
             raise UnknownReplicationStrategy(self._pipeline.replication)
-        return strategy_class(self.conn, self.STAGING_TABLE_NAME)
+        return strategy_class(self._pipeline, self.conn, self.STAGING_TABLE_NAME)
 
 
 class DuckDBExtension(BaseConfig):
