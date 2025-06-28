@@ -4,18 +4,8 @@ import polars as pl
 import pytest
 from duckdb import DuckDBPyConnection
 
-from wealthz.model import ETLPipeline
+from tests.conftest import YFINANCE_ETL_PIPELINE
 from wealthz.runner import PipelineRunner
-
-
-@pytest.fixture
-def mock_pipeline():
-    mock_datasource = MagicMock()
-    mock_datasource.type = "yfinance"
-    mock_pipeline = MagicMock(spec=ETLPipeline)
-    mock_pipeline.name = "test_pipeline"
-    mock_pipeline.datasource = mock_datasource
-    return mock_pipeline
 
 
 @pytest.fixture
@@ -148,19 +138,18 @@ def test_run_pipeline_success(
     mock_settings_class,
     mock_conn_manager,
     mock_conn,
-    mock_pipeline,
 ):
-    runner = PipelineRunner()
+    runner = PipelineRunner(YFINANCE_ETL_PIPELINE)
 
     # Act
-    runner.run(mock_pipeline)
+    runner.run()
 
     # Assert
     mock_conn_manager.provision.assert_called_once()
     mock_syncer.sync.assert_called_once()
-    mock_fetcher_factory_class.assert_called_once_with(mock_pipeline, mock_conn)
+    mock_fetcher_factory_class.assert_called_once_with(YFINANCE_ETL_PIPELINE, mock_conn)
     mock_fetcher.fetch.assert_called_once()
-    mock_transformer_factory_class.assert_called_once_with(mock_pipeline)
+    mock_transformer_factory_class.assert_called_once_with(YFINANCE_ETL_PIPELINE)
     mock_transformer.transform.assert_called_once_with(mock_test_df)
     mock_loader_factory_class.create.called_once()
     mock_loader.load.called_once_with(mock_transformed_df)
@@ -182,15 +171,14 @@ def test_run_pipeline_handles_fetch_error(
     mock_settings_class,
     mock_conn_manager,
     mock_conn,
-    mock_pipeline,
 ):
     mock_fetcher.fetch.side_effect = RuntimeError("Fetch failed")
 
-    runner = PipelineRunner()
+    runner = PipelineRunner(YFINANCE_ETL_PIPELINE)
 
     # Act & Assert
     with pytest.raises(RuntimeError, match="Fetch failed"):
-        runner.run(mock_pipeline)
+        runner.run()
 
 
 def test_run_pipeline_handles_transform_error(
@@ -209,16 +197,15 @@ def test_run_pipeline_handles_transform_error(
     mock_conn_manager_class,
     mock_conn_manager,
     mock_conn,
-    mock_pipeline,
 ):
     # Mock transformer to raise exception
     mock_transformer.transform.side_effect = ValueError("Transform failed")
 
-    runner = PipelineRunner()
+    runner = PipelineRunner(YFINANCE_ETL_PIPELINE)
 
     # Act & Assert
     with pytest.raises(ValueError, match="Transform failed"):
-        runner.run(mock_pipeline)
+        runner.run()
 
 
 def test_run_pipeline_handles_fetch(mock_settings_class, mock_conn_manager_class, mock_conn_manager):
@@ -227,7 +214,7 @@ def test_run_pipeline_handles_fetch(mock_settings_class, mock_conn_manager_class
     mock_settings_class.return_value = mock_settings
 
     # Act
-    runner = PipelineRunner()
+    runner = PipelineRunner(YFINANCE_ETL_PIPELINE)
 
     # Assert
     assert runner.settings == mock_settings

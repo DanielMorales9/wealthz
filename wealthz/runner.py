@@ -10,40 +10,43 @@ logger = get_logger(__name__)
 class PipelineRunner:
     """Service class for executing ETL pipelines."""
 
-    def __init__(self) -> None:
+    def __init__(self, pipeline: ETLPipeline) -> None:
+        self._pipeline = pipeline
         self.settings = DuckLakeSettings()  # type: ignore[call-arg]
         self.conn_manager = DuckLakeConnManager(self.settings)
 
-    def run(self, pipeline: ETLPipeline) -> None:
+        conn = self.conn_manager.provision()
+        self._syncer = DuckLakeSchemaSyncer(pipeline, conn)
+
+        fetcher_factory = FetcherFactory(pipeline, conn)
+        self._fetcher = fetcher_factory.create()
+
+        transformer_factory = TransformerFactory(pipeline)
+        self._transformer = transformer_factory.create()
+
+        loader_factory = LoaderFactory(pipeline, conn)
+        self._loader = loader_factory.create()
+
+    def run(self) -> None:
         """Execute the ETL pipeline."""
         try:
-            logger.info(f"Starting pipeline execution: {pipeline.name}")
-
-            # Setup connection and sync schema
-            conn = self.conn_manager.provision()
+            logger.info(f"Starting pipeline execution: {self._pipeline.name}")
 
             logger.info("Syncing database schema")
-            syncer = DuckLakeSchemaSyncer(pipeline, conn)
-            syncer.sync()
+            self._syncer.sync()
 
             # Create fetcher and fetch data
-            logger.info(f"Fetching data from {pipeline.datasource.type} datasource")
-            fetcher_factory = FetcherFactory(pipeline, conn)
-            fetcher = fetcher_factory.create()
-            df = fetcher.fetch()
-
+            logger.info(f"Fetching data from {self._pipeline.datasource.type} datasource")
+            df = self._fetcher.fetch()
             logger.info(f"Fetched {len(df)} rows")
 
             # Apply transforms if configured
-            transformer_factory = TransformerFactory(pipeline)
-            transformer = transformer_factory.create()
-            df = transformer.transform(df)
+            df = self._transformer.transform(df)
             logger.info("Transform application completed")
 
             # Load data
-            loader_factory = LoaderFactory(pipeline, conn)
-            loader = loader_factory.create()
-            loader.load(df)
+            logger.info(f"Loading data into {self._pipeline.destination.type} destination")
+            self._loader.load(df)
             logger.info("Data loading completed")
 
         except Exception:

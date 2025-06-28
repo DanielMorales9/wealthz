@@ -45,8 +45,8 @@ def run(name: str) -> None:
             sys.exit(1)
 
         # Execute pipeline
-        runner = PipelineRunner()
-        runner.run(pipeline)
+        runner = PipelineRunner(pipeline)
+        runner.run()
 
         click.echo("Pipeline executed successfully")
 
