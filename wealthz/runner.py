@@ -23,8 +23,8 @@ class PipelineRunner:
             conn = self.conn_manager.provision()
 
             logger.info("Syncing database schema")
-            syncer = DuckLakeSchemaSyncer(conn)
-            syncer.sync(pipeline)
+            syncer = DuckLakeSchemaSyncer(pipeline, conn)
+            syncer.sync()
 
             # Create fetcher and fetch data
             logger.info(f"Fetching data from {pipeline.datasource.type} datasource")

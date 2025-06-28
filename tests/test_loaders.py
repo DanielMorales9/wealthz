@@ -85,11 +85,11 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
             user=postgres_container.username,
             password=postgres_container.password,
         )
-        settings = DuckLakeSettings(storage=storage_settings, pg=pg_config)
+        settings = DuckLakeSettings(name="ducklake", storage=storage_settings, pg=pg_config)
         manager = DuckLakeConnManager(settings)
         conn = manager.provision()
-        syncer = DuckLakeSchemaSyncer(conn)
-        syncer.sync(PEOPLE_ETL_PIPELINE)
+        syncer = DuckLakeSchemaSyncer(PEOPLE_ETL_PIPELINE, conn)
+        syncer.sync()
 
         # Create table and insert test data
         df = pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]})
@@ -97,7 +97,7 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
         pipeline = copy(PEOPLE_ETL_PIPELINE)
         pipeline.replication = replication
         assert pipeline.replication == replication
-        DuckLakeLoader(GSHEET_ETL_PIPELINE, conn).load(df)
+        DuckLakeLoader(PEOPLE_ETL_PIPELINE, conn).load(df)
 
         # Query back the data
         result = conn.execute("SELECT * FROM people").pl()
@@ -128,7 +128,7 @@ def test_replication_strategy_pass():
 def test_duck_lake_schema_syncer_extract_duck_type():
     """Test type mapping in DuckLakeSchemaSyncer"""
     mock_conn = MagicMock()
-    syncer = DuckLakeSchemaSyncer(mock_conn)
+    syncer = DuckLakeSchemaSyncer(PEOPLE_ETL_PIPELINE, mock_conn)
 
     from wealthz.model import Column
 

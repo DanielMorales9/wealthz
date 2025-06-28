@@ -39,19 +39,20 @@ class DuckLakeSchemaSyncer:
     CREATE_TABLE_TPL_STMT = """CREATE TABLE IF NOT EXISTS $table_name ($columns_def);"""
     DUCKDB_TYPES_MAP: ClassVar[dict[str, str]] = {"string": "varchar"}
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection):
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection):
+        self._pipeline = pipeline
         self.conn = conn
 
     def extract_duck_type(self, column: Column) -> str:
         return self.DUCKDB_TYPES_MAP.get(column.type, column.type)
 
-    def sync(self, pipeline: ETLPipeline) -> None:
-        duck_columns = ((column.name, self.extract_duck_type(column)) for column in pipeline.columns)
+    def sync(self) -> None:
+        duck_columns = ((column.name, self.extract_duck_type(column)) for column in self._pipeline.columns)
         columns_def = ",".join(f"\n\t{name} {duck_type.upper()}" for name, duck_type in duck_columns)
 
         query = query_build(
             self.CREATE_TABLE_TPL_STMT,
-            table_name=pipeline.name,
+            table_name=self._pipeline.name,
             columns_def=columns_def,
         )
         logger.info(query)
