@@ -10,7 +10,6 @@ from wealthz.factories import (
     SPREADSHEETS_WRITE_SCOPES,
     GoogleCredentialsFactory,
     GoogleCredentialsScope,
-    GoogleSheetsLoaderFactory,
     LoaderFactory,
     TransformerFactory,
     UnknownDestinationTypeError,
@@ -106,25 +105,6 @@ def test_create_credentials_with_write_scope(mock_from_file):
     # Assert
     assert creds is fake_creds
     mock_from_file.assert_called_once_with(Path("tmp/secrets/creds.json"), scopes=SPREADSHEETS_WRITE_SCOPES)
-
-
-@patch("wealthz.loaders.build")
-@patch("wealthz.factories.Credentials.from_service_account_file")
-def test_google_sheets_loader_factory(mock_from_file, mock_build):
-    # Arrange
-    fake_creds = MagicMock()
-    mock_from_file.return_value = fake_creds
-
-    factory = GoogleSheetsLoaderFactory(
-        sheet_id="test_sheet_id", credentials_file_name="test_creds.json", sheet_range="Sheet1!A1:Z100"
-    )
-
-    # Act
-    loader = factory.create()
-
-    # Assert
-    assert isinstance(loader, GoogleSheetsLoader)
-    mock_from_file.assert_called_once()
 
 
 def test_loader_factory_create_ducklake_loader_default():

@@ -3,7 +3,7 @@ from abc import ABC
 from io import TextIOWrapper
 from string import Template
 from types import TracebackType
-from typing import Any, ClassVar, Generic, Optional
+from typing import Any, ClassVar, Generic, Optional, cast
 
 import duckdb
 from duckdb.duckdb import DuckDBPyConnection
@@ -13,7 +13,7 @@ from polars import DataFrame
 
 from wealthz.generics import T
 from wealthz.logutils import get_logger
-from wealthz.model import BaseConfig, Column, ETLPipeline, ReplicationType
+from wealthz.model import BaseConfig, Column, ETLPipeline, GoogleSheetDestination, ReplicationType
 from wealthz.settings import DuckLakeSettings
 
 logger = get_logger(__name__)
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 class Loader(ABC, Generic[T]):
     @abc.abstractmethod
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None: ...
+    def load(self, df: DataFrame) -> None: ...
 
 
 class ReplicationStrategy(ABC):
@@ -137,24 +137,25 @@ class DuckLakeLoader(Loader):
         ReplicationType.INCREMENTAL: DuckLakeIncrementalReplicationStrategy,
     }
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection):
+    def __init__(self, pipeline: ETLPipeline, conn: duckdb.DuckDBPyConnection):
+        self._pipeline = pipeline
         self.conn = conn
 
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+    def load(self, df: DataFrame) -> None:
         try:
             self.conn.begin()
             self.conn.register(self.STAGING_TABLE_NAME, df)
-            strategy = self.get_replication_strategy(pipeline)
-            strategy.replicate(pipeline=pipeline)
+            strategy = self.get_replication_strategy()
+            strategy.replicate(pipeline=self._pipeline)
             self.conn.commit()
         except Exception:
             self.conn.rollback()
             logger.exception("Transaction failed")
 
-    def get_replication_strategy(self, pipeline: ETLPipeline) -> DuckLakeBaseReplicationStrategy:
-        strategy_class = self.REPLICATION_STRATEGY_MAP.get(pipeline.replication)
+    def get_replication_strategy(self) -> DuckLakeBaseReplicationStrategy:
+        strategy_class = self.REPLICATION_STRATEGY_MAP.get(self._pipeline.replication)
         if strategy_class is None:
-            raise UnknownReplicationStrategy(pipeline.replication)
+            raise UnknownReplicationStrategy(self._pipeline.replication)
         return strategy_class(self.conn, self.STAGING_TABLE_NAME)
 
 
@@ -274,24 +275,25 @@ class DuckLakeConnManager:
 
 
 class GoogleSheetsLoader(Loader):
-    def __init__(self, credentials: Credentials, sheet_id: str, sheet_range: str | None = None):
+    def __init__(self, pipeline: ETLPipeline, credentials: Credentials):
+        destination = cast(GoogleSheetDestination, pipeline.destination)
+        self._pipeline = pipeline
+        self.sheet_id = destination.sheet_id
+        self.sheet_range = destination.sheet_range
         self.credentials = credentials
-        self.sheet_id = sheet_id
-        self.sheet_range = sheet_range
         self.service = build("sheets", "v4", credentials=credentials)
 
-    def load(self, df: DataFrame, pipeline: ETLPipeline) -> None:
+    def load(self, df: DataFrame) -> None:
         try:
-            data = self._dataframe_to_sheets_data(df, pipeline)
-            self._write_to_sheet(data, pipeline)
+            data = self._dataframe_to_sheets_data(df)
+            self._write_to_sheet(data)
             logger.info("Successfully loaded %d rows to Google Sheet", len(data) - 1)
         except Exception:
             logger.exception("Failed to load data to Google Sheet")
             raise
 
-    @staticmethod
-    def _dataframe_to_sheets_data(df: DataFrame, pipeline: ETLPipeline) -> list[list[Any]]:
-        data = [pipeline.column_names]
+    def _dataframe_to_sheets_data(self, df: DataFrame) -> list[list[Any]]:
+        data = [self._pipeline.column_names]
 
         for row in df.rows():
             formatted_row = []
@@ -304,8 +306,8 @@ class GoogleSheetsLoader(Loader):
 
         return data
 
-    def _write_to_sheet(self, data: list[list[Any]], pipeline: ETLPipeline) -> None:
-        range_name = self.sheet_range or f"{pipeline.name}!A:Z"
+    def _write_to_sheet(self, data: list[list[Any]]) -> None:
+        range_name = self.sheet_range or f"{self._pipeline.name}!A:Z"
         self._clear_sheet(range_name)
 
         body = {"values": data}

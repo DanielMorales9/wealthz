@@ -186,7 +186,7 @@ Destination = Annotated[Union[GoogleSheetDestination, DuckLakeDestination], Fiel
 
 class ETLPipeline(Table):
     datasource: Datasource
-    destination: Optional[Destination] = None
+    destination: Destination = Field(default_factory=DuckLakeDestination)
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> "ETLPipeline":

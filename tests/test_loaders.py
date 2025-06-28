@@ -20,15 +20,15 @@ from wealthz.loaders import (
     UnknownReplicationStrategy,
     query_build,
 )
-from wealthz.model import Column, ColumnType, ETLPipeline, ReplicationType
+from wealthz.model import Column, ColumnType, ETLPipeline, GoogleSheetDestination, ReplicationType
 from wealthz.settings import DuckLakeSettings, PostgresCatalogSettings, StorageSettings
 
 
 def test_when_loading_into_ducklake_then_succeeds():
     mock_conn = MagicMock(spec=DuckDBPyConnection)
-    loader = DuckLakeLoader(mock_conn)
+    loader = DuckLakeLoader(GSHEET_ETL_PIPELINE, mock_conn)
     df = pl.DataFrame({"id": [4, 5], "name": ["David", "Eve"]})
-    loader.load(df, GSHEET_ETL_PIPELINE)
+    loader.load(df)
     mock_conn.register.called_once_with("staging", df)
     mock_conn.execute.called_once_with("INSERT INTO public.people SELECT * FROM staging")
 
@@ -97,7 +97,7 @@ def test_ducklake_with_minio_and_postgres(postgres_container, replication):
         pipeline = copy(PEOPLE_ETL_PIPELINE)
         pipeline.replication = replication
         assert pipeline.replication == replication
-        DuckLakeLoader(conn).load(df, pipeline)
+        DuckLakeLoader(GSHEET_ETL_PIPELINE, conn).load(df)
 
         # Query back the data
         result = conn.execute("SELECT * FROM people").pl()
@@ -185,10 +185,10 @@ def test_duck_lake_loader_transaction_rollback():
     mock_conn = MagicMock()
     mock_conn.register.side_effect = Exception("Database error")
 
-    loader = DuckLakeLoader(mock_conn)
+    loader = DuckLakeLoader(PEOPLE_ETL_PIPELINE, mock_conn)
     df = pl.DataFrame({"id": [1], "name": ["test"]})
 
-    loader.load(df, PEOPLE_ETL_PIPELINE)
+    loader.load(df)
 
     mock_conn.begin.assert_called_once()
     mock_conn.rollback.assert_called_once()
@@ -197,14 +197,14 @@ def test_duck_lake_loader_transaction_rollback():
 def test_duck_lake_loader_unknown_replication_type():
     """Test unknown replication type handling"""
     mock_conn = MagicMock()
-    loader = DuckLakeLoader(mock_conn)
 
     # Create pipeline with invalid replication type
     invalid_pipeline = PEOPLE_ETL_PIPELINE.model_copy()
     invalid_pipeline.replication = "unknown"
+    loader = DuckLakeLoader(invalid_pipeline, mock_conn)
 
     with pytest.raises(UnknownReplicationStrategy):
-        loader.get_replication_strategy(invalid_pipeline)
+        loader.get_replication_strategy()
 
 
 def test_duck_lake_conn_manager_configure_gcs_storage():
@@ -288,7 +288,6 @@ def test_google_sheets_loader_dataframe_conversion():
     """Test converting DataFrame to Google Sheets data format"""
     # Mock credentials and create loader
     mock_credentials = MagicMock()
-    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id")
 
     # Create test data
     df = pl.DataFrame({"name": ["Alice", "Bob"], "age": [25, 30], "value": [100.5, None]})
@@ -301,14 +300,18 @@ def test_google_sheets_loader_dataframe_conversion():
     ]
     pipeline = ETLPipeline(
         name="test_table",
+        destination=GoogleSheetDestination(
+            credentials_file="credentials.json", sheet_id="Sheet1", sheet_range="Tab:!A:Z"
+        ),
         columns=columns,
         replication=ReplicationType.FULL,
         primary_keys=["name"],
         datasource={"type": "ducklake", "query": "SELECT * FROM test"},
     )
+    loader = GoogleSheetsLoader(pipeline, mock_credentials)
 
     # Test data conversion
-    result = loader._dataframe_to_sheets_data(df, pipeline)
+    result = loader._dataframe_to_sheets_data(df)
 
     # Check headers
     assert result[0] == ["name", "age", "value"]
@@ -326,19 +329,22 @@ def test_google_sheets_loader_write_to_sheet_full_replication(mock_build):
     mock_service = MagicMock()
     mock_build.return_value = mock_service
 
-    # Mock credentials and create loader
+    # Mock credentials
     mock_credentials = MagicMock()
-    loader = GoogleSheetsLoader(mock_credentials, "test_sheet_id", "Sheet1!A1:C10")
 
     # Create test pipeline
     columns = [Column(name="name", type=ColumnType.STRING), Column(name="age", type=ColumnType.INTEGER)]
     pipeline = ETLPipeline(
         name="test_table",
+        destination=GoogleSheetDestination(
+            credentials_file="credentials.json", sheet_id="Sheet1", sheet_range="Tab:!A:Z"
+        ),
         columns=columns,
         replication=ReplicationType.FULL,
         primary_keys=["name"],
         datasource={"type": "ducklake", "query": "SELECT * FROM test"},
     )
+    loader = GoogleSheetsLoader(pipeline, mock_credentials)
 
     # Test data
     test_data = [["name", "age"], ["Alice", "25"]]
@@ -347,7 +353,7 @@ def test_google_sheets_loader_write_to_sheet_full_replication(mock_build):
     mock_service.spreadsheets().values().update().execute.return_value = {"updatedCells": 2}
 
     # Test write operation
-    loader._write_to_sheet(test_data, pipeline)
+    loader._write_to_sheet(test_data)
 
     # Verify clear was called
     mock_service.spreadsheets().values().clear.assert_called_once()

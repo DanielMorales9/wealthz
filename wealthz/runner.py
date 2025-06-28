@@ -43,7 +43,7 @@ class PipelineRunner:
             # Load data
             loader_factory = LoaderFactory(pipeline, conn)
             loader = loader_factory.create()
-            loader.load(df, pipeline)
+            loader.load(df)
             logger.info("Data loading completed")
 
         except Exception:

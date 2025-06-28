@@ -9,7 +9,7 @@ from wealthz.constants import SECRETS_DIR
 from wealthz.fetchers import DuckLakeFetcher, Fetcher, GoogleSheetFetcher, YFinanceFetcher
 from wealthz.generics import T
 from wealthz.loaders import DuckLakeLoader, GoogleSheetsLoader, Loader
-from wealthz.model import DatasourceType, DestinationType, ETLPipeline, GoogleSheetDatasource, GoogleSheetDestination
+from wealthz.model import DatasourceType, DestinationType, ETLPipeline, GoogleSheetDatasource
 from wealthz.transforms import ColumnTransformer, NoopTransformer, Transformer
 
 SPREADSHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -45,20 +45,6 @@ class UnknownDataSourceTypeError(ValueError):
         super().__init__(f"Unknown datasource type: {source_type}")
 
 
-class GoogleSheetsLoaderFactory(Factory[GoogleSheetsLoader]):
-    def __init__(self, sheet_id: str, credentials_file_name: str, sheet_range: str | None = None):
-        self.sheet_id = sheet_id
-        self.sheet_range = sheet_range
-        self._credentials_file_name = credentials_file_name
-
-    def create(self) -> GoogleSheetsLoader:
-        creds_manager = GoogleCredentialsFactory(
-            self._credentials_file_name, scope=GoogleCredentialsScope.SPREADSHEETS_WRITE
-        )
-        credentials = creds_manager.create()
-        return GoogleSheetsLoader(credentials, self.sheet_id, self.sheet_range)
-
-
 class UnknownDestinationTypeError(ValueError):
     def __init__(self, destination_type: DestinationType):
         super().__init__(f"Unknown destination type: {destination_type}")
@@ -74,17 +60,15 @@ class LoaderFactory(Factory[Loader]):
     def create(self) -> Loader:
         """Create loader based on destination type."""
         if self._pipeline.destination is None:
-            return DuckLakeLoader(self._conn)
+            return DuckLakeLoader(self._pipeline, self._conn)
         elif self._pipeline.destination.type == DestinationType.GOOGLE_SHEET:
-            destination = cast(GoogleSheetDestination, self._pipeline.destination)
-            factory = GoogleSheetsLoaderFactory(
-                sheet_id=destination.sheet_id,
-                credentials_file_name=destination.credentials_file,
-                sheet_range=destination.sheet_range,
+            creds_manager = GoogleCredentialsFactory(
+                self._pipeline.destination.credentials_file, scope=GoogleCredentialsScope.SPREADSHEETS_WRITE
             )
-            return factory.create()
+            credentials = creds_manager.create()
+            return GoogleSheetsLoader(self._pipeline, credentials)
         elif self._pipeline.destination.type == DestinationType.DUCKLAKE:
-            return DuckLakeLoader(self._conn)
+            return DuckLakeLoader(self._pipeline, self._conn)
         else:
             raise UnknownDestinationTypeError(self._pipeline.destination.type)
 
@@ -124,5 +108,4 @@ class TransformerFactory(Factory[Transformer]):
     def create(self) -> Transformer:
         if self._pipeline.has_transforms:
             return ColumnTransformer(self._pipeline.columns)
-        else:
-            return NoopTransformer()
+        return NoopTransformer()

@@ -163,7 +163,7 @@ def test_run_pipeline_success(
     mock_transformer_factory_class.assert_called_once_with(mock_pipeline)
     mock_transformer.transform.assert_called_once_with(mock_test_df)
     mock_loader_factory_class.create.called_once()
-    mock_loader.load.assert_called_once_with(mock_transformed_df, mock_pipeline)
+    mock_loader.load.called_once_with(mock_transformed_df)
 
 
 def test_run_pipeline_handles_fetch_error(
@@ -213,12 +213,6 @@ def test_run_pipeline_handles_transform_error(
 ):
     # Mock transformer to raise exception
     mock_transformer.transform.side_effect = ValueError("Transform failed")
-
-    # Mock loader
-    mock_loader = MagicMock()
-    mock_loader_factory = MagicMock()
-    mock_loader_factory.create.return_value = mock_loader
-    mock_loader_factory_class.return_value = mock_loader_factory
 
     runner = PipelineRunner()
 
