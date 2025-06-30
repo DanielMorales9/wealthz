@@ -22,9 +22,6 @@ jobs:
       - name: Set up the environment
         uses: ./.github/actions/setup-poetry-env
 
-      - name: Set up test environment
-        run: cp .env.test .env
-
       - name: Run code quality checks
         run: make verify
 
