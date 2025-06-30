@@ -216,7 +216,7 @@ def test_duck_lake_conn_manager_configure_gcs_storage():
         data_path="gcs://test-bucket/data",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
-    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
+    settings = DuckLakeSettings(name="ducklake", storage=storage_settings, pg=pg_settings)
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
@@ -239,7 +239,7 @@ def test_duck_lake_conn_manager_configure_s3_storage():
         data_path="s3://test-bucket/data",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
-    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
+    settings = DuckLakeSettings(name="ducklake", storage=storage_settings, pg=pg_settings)
 
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()
@@ -262,7 +262,7 @@ def test_duck_lake_conn_manager_unsupported_storage_type():
         data_path="azure://test",
     )
     pg_settings = PostgresCatalogSettings(dbname="test", host="localhost", port=5432, user="user", password="pass")  # noqa: S106
-    settings = DuckLakeSettings(storage=storage_settings, pg=pg_settings)
+    settings = DuckLakeSettings(name="ducklake", storage=storage_settings, pg=pg_settings)
 
     with patch("duckdb.connect") as mock_connect:
         mock_conn = MagicMock()

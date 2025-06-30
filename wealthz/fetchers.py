@@ -85,4 +85,4 @@ class YFinanceFetcher(Fetcher):
             dataframes.append(df)
 
         df = pd.concat(dataframes, ignore_index=True)
-        return pl.from_pandas(df)  # type: ignore[no-any-return]
+        return pl.from_pandas(df)
